@@ -33,6 +33,8 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Fixed
 
+- Aligned the GitHub Actions pnpm version with the lockfile generator so the
+  frozen frontend dependency installation succeeds in CI.
 - Included the pnpm workspace build-policy file in the dashboard Docker image so
   esbuild can be installed during container builds.
 - Allowed both `localhost` and `127.0.0.1` dashboard origins during local
