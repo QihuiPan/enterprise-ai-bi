@@ -9,6 +9,9 @@ htmlcov/
 *.db
 *.sqlite3
 data/uploads/
+data/m5/
+artifacts/
+*.joblib
 frontend/node_modules/
 frontend/dist/
 .DS_Store

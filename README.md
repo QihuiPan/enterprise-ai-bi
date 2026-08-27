@@ -74,6 +74,31 @@ Revenue is derived server-side as
 `quantity * unit_price * (1 - discount)` so uploaded totals cannot override the
 calculation.
 
+## Walmart M5 workflow
+
+The M5 pipeline consumes the official `calendar.csv`, `sell_prices.csv`, and
+`sales_train_evaluation.csv` files. It verifies the University of Nicosia
+Zenodo v1 sizes and MD5 checksums before processing. Obtain and use the files
+only after reviewing the original Kaggle competition rules.
+
+```powershell
+python scripts/run_m5_pipeline.py `
+  --data-dir C:\path\to\m5\raw `
+  --output-dir C:\path\to\m5\artifacts `
+  --stage all
+```
+
+All 30,490 item-store series and 1,941 observed days participate in revenue and
+unit aggregation. The prepared store-category grain contains 30 series and is
+small enough for this portfolio API. The training stage fits a global
+histogram gradient-boosted model to daily unit sales and compares it with a
+28-day seasonal-naive baseline on the final 28 observed days. Reported metrics
+are a project holdout evaluation, not the competition's official WRMSSE.
+
+Generated data and model files are intentionally excluded from Git. The
+`m5_application_sales.csv` output can be uploaded through the standard API;
+M5 stores act as customer proxies because the source contains no shoppers.
+
 ## API overview
 
 | Endpoint | Purpose |

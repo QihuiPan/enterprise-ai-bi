@@ -19,6 +19,17 @@ the data window, evaluation metrics, application commit, and configuration when
 promoting an output to a business process. Do not interpret anomaly flags as
 confirmed fraud and do not present forecast intervals as guaranteed bounds.
 
+### Walmart M5
+
+- Keep raw M5 files and generated artifacts outside the repository.
+- Run `scripts/run_m5_pipeline.py --stage all` to verify, prepare, train, and
+  evaluate the store-category model.
+- Archive `m5_preparation_summary.json`, `m5_training_metrics.json`, the Git
+  commit, and the source DOI together for reproducibility.
+- Do not label the project holdout metrics as official M5 WRMSSE results.
+- The source has store and product hierarchies but no customer identities;
+  customer segmentation therefore treats each store as a proxy entity.
+
 ## Production checklist
 
 - Replace local database credentials with a managed secret.

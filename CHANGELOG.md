@@ -11,6 +11,12 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Added
 
+- Added a Walmart M5 pipeline that verifies the University of Nicosia archive,
+  aggregates all 59 million item-day values to store-category daily records,
+  exports an application-compatible CSV, and trains a global gradient-boosted
+  holdout model with seasonal-naive benchmark metrics.
+- Recorded the first verified M5 training run, temporal split, benchmark
+  comparison, and end-to-end application validation results.
 - Initial enterprise AI business intelligence MVP repository structure.
 - CSV ingestion with schema validation, transformation, and relational storage.
 - KPI, trend, dimensional breakdown, and revenue change analytics services.
