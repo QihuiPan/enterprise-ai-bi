@@ -1,0 +1,45 @@
+# Changelog
+
+All notable changes to this project are documented in this file. The format is
+based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
+project follows semantic versioning after its first release.
+
+Every meaningful code, configuration, documentation, or infrastructure update
+must include an English entry under `Unreleased` before it is committed.
+
+## [Unreleased]
+
+### Added
+
+- Initial enterprise AI business intelligence MVP repository structure.
+- CSV ingestion with schema validation, transformation, and relational storage.
+- KPI, trend, dimensional breakdown, and revenue change analytics services.
+- Revenue forecasting, RFM customer segmentation, and anomaly detection models.
+- Grounded specialist-agent orchestration and executive report generation.
+- FastAPI endpoints, React dashboard, Docker Compose, automated tests, and CI.
+- Architecture, security, contribution, and operating documentation.
+
+### Changed
+
+- Updated the dashboard to supported React, Recharts, Vite, and icon-library
+  releases and explicitly allowed the required esbuild installation step.
+- Refined FastAPI dependency annotations and code formatting to satisfy the
+  repository's strict lint configuration.
+- Expanded API integration coverage across every specialist agent, the ML
+  endpoints, executive reporting, and invalid analytical dimensions.
+- Removed test-suite deprecation warnings by adopting Starlette's supported
+  `httpx2` client and explicit timedelta units.
+- Excluded generated Python package metadata from version control.
+
+### Fixed
+
+- Included the pnpm workspace build-policy file in the dashboard Docker image so
+  esbuild can be installed during container builds.
+- Allowed both `localhost` and `127.0.0.1` dashboard origins during local
+  development so browser responses are not blocked by CORS.
+- Expanded the 24-month revenue chart across the dashboard grid to remove an
+  unbalanced empty column on wide screens.
+- Prevented long evidence-source labels from overflowing the mobile AI insight
+  card and clipping the question form.
+- Split charting and React dependencies into dedicated production chunks to
+  keep the dashboard entry bundle small and cacheable.
