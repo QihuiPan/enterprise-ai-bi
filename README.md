@@ -54,6 +54,21 @@ pnpm dev
 The default database is `sqlite:///./enterprise_ai_bi.db`. Copy `.env.example`
 to `.env` to override settings.
 
+## Code organization
+
+- `backend/app/api/` contains small domain routers; `main.py` only builds and
+  configures the FastAPI application.
+- `BusinessIntelligence` is a request-scoped facade. It materializes one sales
+  snapshot and shares it across analytics, ML specialists, and executive
+  reporting instead of repeating the database-to-DataFrame conversion.
+- Validation, ingestion, forecasting, segmentation, and anomaly detection use
+  configurable service classes. The original functions remain as stable
+  compatibility wrappers.
+- `frontend/src/api/`, `hooks/`, `components/`, and `utils/` separate transport,
+  state orchestration, presentation, and formatting from the page layout.
+- M5 candidate and selection records use explicit dataclasses while generated
+  training artifacts remain outside version control.
+
 ## Upload schema
 
 CSV files must contain:
@@ -124,6 +139,7 @@ Run all checks before committing:
 ```bash
 ruff check .
 pytest --cov=backend --cov=data_pipeline --cov=ml
+cd frontend && pnpm build
 ```
 
 Every meaningful update must add an English entry to `CHANGELOG.md`. Pull

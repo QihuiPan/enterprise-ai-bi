@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.base import RegressorMixin
 from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, mean_squared_log_error
 
@@ -61,6 +63,22 @@ FEATURE_COLUMNS = [
 ]
 
 BLEND_SOURCE_NAMES = ("model", "lag_7", "lag_28", "lag_56")
+
+
+@dataclass
+class ModelCandidate:
+    name: str
+    features: list[str]
+    estimator: RegressorMixin
+
+
+@dataclass
+class SelectedCandidate:
+    candidate: ModelCandidate
+    weights: np.ndarray
+    wmape: float
+    selection_training: pd.DataFrame
+    tuning: pd.DataFrame
 
 
 def build_m5_features(frame: pd.DataFrame) -> pd.DataFrame:
@@ -146,41 +164,41 @@ def _metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
     }
 
 
-def _candidate_models(random_state: int) -> list[dict]:
+def _candidate_models(random_state: int) -> list[ModelCandidate]:
     return [
-        {
-            "name": "legacy_hist_gradient_boosting",
-            "features": LEGACY_FEATURE_COLUMNS,
-            "estimator": HistGradientBoostingRegressor(
+        ModelCandidate(
+            name="legacy_hist_gradient_boosting",
+            features=LEGACY_FEATURE_COLUMNS,
+            estimator=HistGradientBoostingRegressor(
                 learning_rate=0.06,
                 max_iter=250,
                 max_leaf_nodes=31,
                 l2_regularization=0.1,
                 random_state=random_state,
             ),
-        },
-        {
-            "name": "enhanced_hist_gradient_boosting",
-            "features": FEATURE_COLUMNS,
-            "estimator": HistGradientBoostingRegressor(
+        ),
+        ModelCandidate(
+            name="enhanced_hist_gradient_boosting",
+            features=FEATURE_COLUMNS,
+            estimator=HistGradientBoostingRegressor(
                 learning_rate=0.04,
                 max_iter=400,
                 max_leaf_nodes=31,
                 l2_regularization=0.5,
                 random_state=random_state,
             ),
-        },
-        {
-            "name": "enhanced_extra_trees",
-            "features": FEATURE_COLUMNS,
-            "estimator": ExtraTreesRegressor(
+        ),
+        ModelCandidate(
+            name="enhanced_extra_trees",
+            features=FEATURE_COLUMNS,
+            estimator=ExtraTreesRegressor(
                 n_estimators=300,
                 min_samples_leaf=2,
                 max_features=0.8,
                 n_jobs=-1,
                 random_state=random_state,
             ),
-        },
+        ),
     ]
 
 
@@ -220,7 +238,12 @@ def _select_blend(
     return best_weights, np.maximum(0, sources @ best_weights)
 
 
-def _fit_predict(estimator, training, evaluation, columns) -> np.ndarray:
+def _fit_predict(
+    estimator: RegressorMixin,
+    training: pd.DataFrame,
+    evaluation: pd.DataFrame,
+    columns: list[str],
+) -> np.ndarray:
     estimator.fit(training[columns], np.log1p(training["quantity"]))
     return np.maximum(0, np.expm1(estimator.predict(evaluation[columns])))
 
@@ -239,9 +262,9 @@ def train_m5_model(
     tuning_start = holdout_start - timedelta(days=horizon)
 
     candidate_results = {}
-    selected = None
+    selected: SelectedCandidate | None = None
     for candidate in _candidate_models(random_state):
-        columns = candidate["features"]
+        columns = candidate.features
         available = features.dropna(subset=columns)
         selection_training = available[available["order_date"] < tuning_start]
         tuning = available[
@@ -254,7 +277,7 @@ def train_m5_model(
                 "the longest feature lag."
             )
         model_prediction = _fit_predict(
-            candidate["estimator"], selection_training, tuning, columns
+            candidate.estimator, selection_training, tuning, columns
         )
         actual = tuning["quantity"].to_numpy(dtype="float64")
         weights, blended_prediction = _select_blend(
@@ -267,20 +290,20 @@ def train_m5_model(
             "blended_metrics": blended_metrics,
             "blend_weights": dict(zip(BLEND_SOURCE_NAMES, weights.tolist(), strict=True)),
         }
-        candidate_results[candidate["name"]] = result
-        if selected is None or blended_metrics["wmape"] < selected["wmape"]:
-            selected = {
-                **candidate,
-                "weights": weights,
-                "wmape": blended_metrics["wmape"],
-                "selection_training": selection_training,
-                "tuning": tuning,
-            }
+        candidate_results[candidate.name] = result
+        if selected is None or blended_metrics["wmape"] < selected.wmape:
+            selected = SelectedCandidate(
+                candidate=candidate,
+                weights=weights,
+                wmape=blended_metrics["wmape"],
+                selection_training=selection_training,
+                tuning=tuning,
+            )
 
     if selected is None:
         raise ValueError("No M5 model candidate could be selected.")
 
-    selected_columns = selected["features"]
+    selected_columns = selected.candidate.features
     available = features.dropna(subset=selected_columns)
     training = available[available["order_date"] < holdout_start]
     holdout = available[available["order_date"] >= holdout_start]
@@ -290,22 +313,22 @@ def train_m5_model(
     final_candidate = next(
         candidate
         for candidate in _candidate_models(random_state)
-        if candidate["name"] == selected["name"]
+        if candidate.name == selected.candidate.name
     )
-    model = final_candidate["estimator"]
+    model = final_candidate.estimator
     model_prediction = _fit_predict(model, training, holdout, selected_columns)
     sources = _prediction_sources(model_prediction, holdout)
-    predicted = np.maximum(0, sources @ selected["weights"])
+    predicted = np.maximum(0, sources @ selected.weights)
     baseline = np.maximum(0, holdout["lag_28"].to_numpy(dtype="float64"))
     actual = holdout["quantity"].to_numpy(dtype="float64")
 
-    selection_training = selected["selection_training"]
-    tuning = selected["tuning"]
+    selection_training = selected.selection_training
+    tuning = selected.tuning
     blend_weights = dict(
-        zip(BLEND_SOURCE_NAMES, selected["weights"].tolist(), strict=True)
+        zip(BLEND_SOURCE_NAMES, selected.weights.tolist(), strict=True)
     )
     metrics = {
-        "model": selected["name"],
+        "model": selected.candidate.name,
         "target": "daily_unit_sales",
         "evaluation_scope": (
             "store-category one-step temporal holdout; not official WRMSSE"
@@ -349,7 +372,7 @@ def train_m5_model(
         "features": selected_columns,
         "target_transform": "log1p",
         "blend_sources": BLEND_SOURCE_NAMES,
-        "blend_weights": selected["weights"],
+        "blend_weights": selected.weights,
         "metrics": metrics,
     }
     return artifact, metrics, predictions

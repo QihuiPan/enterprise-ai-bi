@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -83,14 +84,13 @@ def _read_calendar(path: Path, day_columns: list[str]) -> pd.DataFrame:
     return calendar.sort_values("day_number")
 
 
-def prepare_m5_frame(
-    data_dir: str | Path,
+def _prepare_m5_frame(
+    directory: Path,
     *,
     verify_checksums: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     """Aggregate all M5 item-day observations to store/category/day rows."""
 
-    directory = Path(data_dir)
     verified = verify_m5_files(directory) if verify_checksums else {}
     sales, day_columns = _read_sales(directory / "sales_train_evaluation.csv")
     calendar = _read_calendar(directory / "calendar.csv", day_columns)
@@ -184,6 +184,33 @@ def prepare_m5_frame(
     return frame, summary
 
 
+@dataclass(frozen=True)
+class M5DataPreparer:
+    data_dir: Path
+    verify_checksums: bool = True
+
+    @classmethod
+    def from_path(
+        cls, data_dir: str | Path, *, verify_checksums: bool = True
+    ) -> M5DataPreparer:
+        return cls(Path(data_dir), verify_checksums)
+
+    def prepare(self) -> tuple[pd.DataFrame, dict]:
+        return _prepare_m5_frame(
+            self.data_dir, verify_checksums=self.verify_checksums
+        )
+
+
+def prepare_m5_frame(
+    data_dir: str | Path,
+    *,
+    verify_checksums: bool = True,
+) -> tuple[pd.DataFrame, dict]:
+    return M5DataPreparer.from_path(
+        data_dir, verify_checksums=verify_checksums
+    ).prepare()
+
+
 def to_application_frame(frame: pd.DataFrame) -> pd.DataFrame:
     positive = frame[frame["quantity"] > 0].copy()
     positive["order_id"] = (
@@ -213,21 +240,28 @@ def to_application_frame(frame: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+@dataclass(frozen=True)
+class M5ArtifactWriter:
+    output_dir: Path
+
+    def write(self, frame: pd.DataFrame, summary: dict) -> dict[str, Path]:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        prepared_path = self.output_dir / "m5_store_category_daily.csv"
+        application_path = self.output_dir / "m5_application_sales.csv"
+        summary_path = self.output_dir / "m5_preparation_summary.json"
+        frame.to_csv(prepared_path, index=False)
+        to_application_frame(frame).to_csv(application_path, index=False)
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        return {
+            "prepared": prepared_path,
+            "application": application_path,
+            "summary": summary_path,
+        }
+
+
 def write_prepared_m5(
     frame: pd.DataFrame,
     summary: dict,
     output_dir: str | Path,
 ) -> dict[str, Path]:
-    directory = Path(output_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    prepared_path = directory / "m5_store_category_daily.csv"
-    application_path = directory / "m5_application_sales.csv"
-    summary_path = directory / "m5_preparation_summary.json"
-    frame.to_csv(prepared_path, index=False)
-    to_application_frame(frame).to_csv(application_path, index=False)
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    return {
-        "prepared": prepared_path,
-        "application": application_path,
-        "summary": summary_path,
-    }
+    return M5ArtifactWriter(Path(output_dir)).write(frame, summary)

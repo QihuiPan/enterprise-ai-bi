@@ -4,13 +4,16 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.agents.orchestrator import answer_question
-from backend.app.services.analytics import kpis
+from backend.app.agents.orchestrator import AgentOrchestrator
+from backend.app.services.business import BusinessIntelligence
 
 
 def executive_report(session: Session) -> dict:
-    metrics = kpis(session)
-    insight = answer_question("Create an executive business performance overview", session)
+    business = BusinessIntelligence(session)
+    metrics = business.analytics.kpis()
+    insight = AgentOrchestrator(business).answer(
+        "Create an executive business performance overview"
+    )
     recommendations: list[str] = []
     if metrics["month_over_month_change_pct"] < -5:
         recommendations.append(
@@ -19,7 +22,8 @@ def executive_report(session: Session) -> dict:
         )
     else:
         recommendations.append(
-            "Validate whether the latest growth is broad-based across regions and categories."
+            "Validate whether the latest growth is broad-based across regions and "
+            "categories."
         )
     recommendations.extend(
         [
@@ -27,7 +31,8 @@ def executive_report(session: Session) -> dict:
             "and expansion actions.",
             "Investigate ranked anomalies with source-system context before "
             "labeling them as errors.",
-            "Re-train and compare the forecasting baseline after each complete reporting period.",
+            "Re-train and compare the forecasting baseline after each complete "
+            "reporting period.",
         ]
     )
     return {

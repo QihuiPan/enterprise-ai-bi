@@ -4,17 +4,34 @@
 
 ```mermaid
 flowchart LR
-    U[Manager / Analyst] -->|CSV or demo seed| API[FastAPI]
-    API --> V[Validation and transformation]
+    U[Manager / Analyst] -->|CSV or demo seed| API[Domain FastAPI routers]
+    API --> V[Validation and ingestion services]
     V --> DB[(SQLite local / PostgreSQL Docker)]
-    DB --> A[Analytics tools]
-    DB --> M[Evaluated ML tools]
+    DB --> B[Request-scoped business facade]
+    B -->|one shared sales snapshot| A[Analytics service]
+    B -->|one shared sales snapshot| M[Configurable ML services]
     A --> O[Grounded agent orchestrator]
     M --> O
     O --> E[Executive Agent]
-    API --> UI[React dashboard]
+    API --> UI[React API client and state hook]
+    UI --> C[Dashboard components]
     E --> API
 ```
+
+## Encapsulation boundaries
+
+- The HTTP layer is divided into data, analytics, machine-learning, insight,
+  and report routers. Route modules validate transport parameters and delegate
+  business work; application construction stays in `main.py`.
+- `BusinessIntelligence` owns the request-scoped sales snapshot and lazily
+  exposes analytics and ML facades. A multi-specialist executive request issues
+  one sales-table query rather than rebuilding the same frame per specialist.
+- Analytics operate as pure methods over a supplied frame. ML classes own their
+  parameters and expose one `run` method; stable function wrappers preserve the
+  original external Python interface.
+- The React API client owns HTTP/error behavior, the dashboard hook owns async
+  state transitions, and focused components own charts, lists, and intelligence
+  presentation. `App.jsx` only composes the page.
 
 ## Trust boundary
 
@@ -30,10 +47,12 @@ returns `agents_used`, `tools_used`, and structured `evidence`.
    dates, non-numeric facts, duplicate order IDs, negative values, and discounts
    outside 0–1.
 3. Transformation derives revenue and converts types.
-4. The loader commits normalized records in one transaction.
-5. Analytics and ML services read the relational store into purpose-specific
-   frames.
-6. FastAPI returns structured outputs to the dashboard and agent layer.
+4. The ingestion service commits normalized records in one transaction and
+   rolls the transaction back if persistence fails.
+5. The request facade reads the relational store into one validated frame and
+   shares that immutable snapshot across the required analytical services.
+6. FastAPI returns structured outputs through the domain routers to the
+   dashboard client and agent layer.
 
 ## ML design
 

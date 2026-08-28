@@ -27,6 +27,12 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Changed
 
+- Refactored and encapsulated the full application without changing public API
+  behavior: split FastAPI routes by domain, introduced a request-scoped
+  business facade that reuses one sales snapshot across analytics and agents,
+  wrapped validation, ingestion, and ML algorithms in configurable services,
+  typed M5 model candidates, and separated the React API, state, chart, list,
+  formatting, and intelligence layers.
 - Optimized Walmart M5 forecasting with a leakage-safe tuning window, 28
   seasonal and lagged-price features, candidate model selection, calibrated
   seasonal blending, a selected 300-tree Extra Trees model, and compressed
