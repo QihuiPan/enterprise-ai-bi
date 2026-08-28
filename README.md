@@ -90,10 +90,13 @@ python scripts/run_m5_pipeline.py `
 
 All 30,490 item-store series and 1,941 observed days participate in revenue and
 unit aggregation. The prepared store-category grain contains 30 series and is
-small enough for this portfolio API. The training stage fits a global
-histogram gradient-boosted model to daily unit sales and compares it with a
-28-day seasonal-naive baseline on the final 28 observed days. Reported metrics
-are a project holdout evaluation, not the competition's official WRMSSE.
+small enough for this portfolio API. The training stage uses the 28 days before
+the final holdout to select a global model and calibrate a seasonal blend. It
+then refits the selected model and evaluates it once on the final 28 observed
+days. The current selected model is a 300-tree Extra Trees regressor with 28
+calendar, hierarchy, lag, rolling, event, SNAP, and lagged-price features.
+Reported metrics are a one-step project holdout evaluation, not the
+competition's official WRMSSE.
 
 Generated data and model files are intentionally excluded from Git. The
 `m5_application_sales.csv` output can be uploaded through the standard API;

@@ -27,6 +27,10 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Changed
 
+- Optimized Walmart M5 forecasting with a leakage-safe tuning window, 28
+  seasonal and lagged-price features, candidate model selection, calibrated
+  seasonal blending, a selected 300-tree Extra Trees model, and compressed
+  model serialization. Final holdout WMAPE improved from 7.8140% to 7.5819%.
 - Updated the dashboard to supported React, Recharts, Vite, and icon-library
   releases and explicitly allowed the required esbuild installation step.
 - Refined FastAPI dependency annotations and code formatting to satisfy the

@@ -26,6 +26,8 @@ confirmed fraud and do not present forecast intervals as guaranteed bounds.
   evaluate the store-category model.
 - Archive `m5_preparation_summary.json`, `m5_training_metrics.json`, the Git
   commit, and the source DOI together for reproducibility.
+- Keep candidate selection and blend calibration on the tuning horizon that
+  precedes the final holdout; do not use final-holdout metrics for tuning.
 - Do not label the project holdout metrics as official M5 WRMSSE results.
 - The source has store and product hierarchies but no customer identities;
   customer segmentation therefore treats each store as a proxy entity.

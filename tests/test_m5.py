@@ -10,7 +10,7 @@ from data_pipeline.m5 import prepare_m5_frame, to_application_frame, write_prepa
 from ml.m5_forecasting import save_m5_model, train_m5_model
 
 
-def build_m5_fixture(directory, days: int = 70) -> None:
+def build_m5_fixture(directory, days: int = 120) -> None:
     dates = pd.date_range("2020-01-01", periods=days, freq="D")
     calendar = pd.DataFrame(
         {
@@ -67,8 +67,8 @@ def test_m5_preparation_aggregates_every_item_day(tmp_path) -> None:
     build_m5_fixture(tmp_path)
     frame, summary = prepare_m5_frame(tmp_path, verify_checksums=False)
     assert summary["source_series"] == 2
-    assert summary["source_item_day_values"] == 140
-    assert len(frame) == 70
+    assert summary["source_item_day_values"] == 240
+    assert len(frame) == 120
     first = frame.iloc[0]
     assert first["quantity"] == 5
     assert first["revenue"] == 13.0
@@ -82,6 +82,9 @@ def test_m5_model_trains_with_temporal_holdout(tmp_path) -> None:
     frame, _ = prepare_m5_frame(tmp_path, verify_checksums=False)
     artifact, metrics, predictions = train_m5_model(frame, horizon=7)
     assert artifact["target_transform"] == "log1p"
+    assert metrics["model"] in metrics["candidate_tuning_results"]
+    assert sum(metrics["selected_blend_weights"].values()) == 1
+    assert metrics["tuning_rows"] == 7
     assert metrics["holdout_rows"] == 7
     assert metrics["model_metrics"]["rmse"] >= 0
     assert len(predictions) == 7

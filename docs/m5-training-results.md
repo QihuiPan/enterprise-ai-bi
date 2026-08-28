@@ -1,6 +1,6 @@
 # Walmart M5 Training Results
 
-## First verified run
+## Verified data preparation
 
 - Run date: 2026-08-28
 - Source: University of Nicosia M5 dataset v1, DOI
@@ -18,36 +18,66 @@ All three source files passed the published byte-size and MD5 checks before
 preparation. The source files, prepared CSV files, predictions, and serialized
 model are operational artifacts and are not committed to Git.
 
-## Model and split
+## Optimized model-selection protocol
 
-The first run trained a global `HistGradientBoostingRegressor` on log-transformed
-daily unit sales at the store-category level. It used calendar, hierarchy, SNAP,
-event, lag, and rolling-window features.
+The optimized run separates model selection from final evaluation. Candidate
+models and blend weights are selected on the 28-day tuning window immediately
+before the established final holdout. The selected candidate is then refitted
+on all eligible observations before the holdout, and the final holdout is
+evaluated once. No optimization choice uses final-holdout metrics.
 
-- Training window: 2011-02-26 through 2016-04-24
-- Training rows: 56,550
-- Holdout window: 2016-04-25 through 2016-05-22
-- Holdout rows: 840
-- Holdout horizon: 28 days
+- Feature-history start: 2011-03-26, after the longest 56-day lag
+- Candidate-training end: 2016-03-27
+- Tuning window: 2016-03-28 through 2016-04-24, 840 rows
+- Final training window: 2011-03-26 through 2016-04-24, 55,710 rows
+- Final holdout: 2016-04-25 through 2016-05-22, 840 rows
+- Evaluation type: store-category one-step daily forecasts
 
-| Metric | Trained model | 28-day seasonal naive |
-| --- | ---: | ---: |
-| MAE | 114.5837 | 157.9000 |
-| RMSE | 181.7892 | 262.8486 |
-| RMSLE | 0.1220 | 0.1575 |
-| WMAPE | 7.8140% | 10.7680% |
+The candidates use log-transformed daily unit sales. Enhanced candidates add
+14- and 56-day lags, additional rolling means and standard deviations, cyclic
+weekly and annual features, and lagged prices for a total of 28 features.
+Blend calibration tests model predictions with 7-, 28-, and 56-day seasonal
+lags in 10-percentage-point increments while keeping at least half the weight
+on the trained model.
 
-The trained model reduced WMAPE by approximately 27.4% and RMSE by 30.8%
-relative to the seasonal-naive benchmark on this holdout.
+| Tuning candidate | Features | Calibrated blend | Tuning WMAPE |
+| --- | ---: | --- | ---: |
+| Legacy histogram gradient boosting | 16 | 80% model, 10% lag 7, 10% lag 56 | 7.2616% |
+| Enhanced histogram gradient boosting | 28 | 70% model, 10% each seasonal lag | 7.4114% |
+| Enhanced Extra Trees | 28 | 100% model | **6.5834%** |
 
-These are project-specific store-category temporal holdout metrics. They are
-not the official M5 hierarchical WRMSSE and must not be presented as a Kaggle
-leaderboard result.
+The tuning window selected `ExtraTreesRegressor` with 300 trees, a minimum leaf
+size of 2, and 80% feature sampling. Seasonal calibration assigned 100% weight
+to the model, so the saved prediction is the unblended model output.
+
+## Final holdout result
+
+The original model and optimized model share the same established holdout so
+their results are directly comparable. The optimized candidate was selected
+without consulting that holdout.
+
+| Metric | Original model | Optimized model | 28-day seasonal naive |
+| --- | ---: | ---: | ---: |
+| MAE | 114.5837 | **111.1802** | 157.9000 |
+| RMSE | 181.7892 | **178.9442** | 262.8486 |
+| RMSLE | **0.1220** | 0.1234 | 0.1575 |
+| WMAPE | 7.8140% | **7.5819%** | 10.7680% |
+
+The optimized model reduces WMAPE by 3.0% and RMSE by 1.6% relative to the
+original trained model. Against the 28-day seasonal-naive benchmark, it reduces
+WMAPE by 29.6% and RMSE by 31.9%. RMSLE is 0.0014 higher than the original, so
+the optimization improves the primary WMAPE objective and absolute-error
+metrics but not every metric.
+
+These are project-specific one-step store-category temporal holdout metrics.
+They use observed lag values as they become available through the holdout. They
+are not recursive 28-day forecasts, the official M5 hierarchical WRMSSE, or a
+Kaggle leaderboard result.
 
 ## Application verification
 
 After loading the generated application CSV into PostgreSQL, the following
-checks passed:
+checks passed during the first verified run:
 
 - KPI aggregation across all 58,105 positive-sales records
 - Existing monthly revenue forecast endpoint
