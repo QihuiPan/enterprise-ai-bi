@@ -32,6 +32,22 @@ confirmed fraud and do not present forecast intervals as guaranteed bounds.
 - The source has store and product hierarchies but no customer identities;
   customer segmentation therefore treats each store as a proxy entity.
 
+### UCI Online Retail II and Iowa Liquor Sales 2024
+
+- Run `python -m scripts.run_public_sales_pipeline --source uci --stage all`
+  or use `--source iowa`; both commands also require raw-data and artifact
+  directories.
+- Archive the generated preparation summary with the application commit. It
+  records the exact download SHA-256 and the revenue reconciliation.
+- The Iowa archive contains five CSV parts. Treat an output that does not span
+  January 1 through December 31, 2024 as incomplete.
+- UCI December 2011 contains only nine observed days, so the analysis stage
+  excludes that partial month from forecast fitting and evaluation.
+- UCI monetary values are GBP and Iowa monetary values are USD. Load one source
+  at a time unless a documented currency conversion is applied first.
+- The Docker API accepts up to 64 MiB so the 45.6 MB prepared Iowa CSV can be
+  loaded. Large inserts use 5,000-row transactional batches.
+
 ## Production checklist
 
 - Replace local database credentials with a managed secret.

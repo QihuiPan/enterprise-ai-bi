@@ -11,6 +11,10 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Added
 
+- Added reproducible UCI Online Retail II and Iowa Liquor Sales 2024 pipelines
+  with atomic official-source downloads, SHA-256 provenance, schema adapters,
+  source-aware cleaning, scalable aggregation, application CSVs, revenue
+  reconciliation summaries, forecast analysis, tests, and an audited run report.
 - Added a Walmart M5 pipeline that verifies the University of Nicosia archive,
   aggregates all 59 million item-day values to store-category daily records,
   exports an application-compatible CSV, and trains a global gradient-boosted
@@ -27,6 +31,11 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Changed
 
+- Batched relational sales ingestion in 5,000-row transactions and raised the
+  Docker upload limit to 64 MiB so the prepared Iowa annual dataset can be
+  loaded without materializing hundreds of thousands of ORM objects at once.
+- Excluded UCI's partial December 2011 period from forecast fitting and holdout
+  evaluation while preserving it in descriptive dataset totals.
 - Refactored and encapsulated the full application without changing public API
   behavior: split FastAPI routes by domain, introduced a request-scoped
   business facade that reuses one sales snapshot across analytics and agents,

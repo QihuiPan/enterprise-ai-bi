@@ -117,6 +117,36 @@ Generated data and model files are intentionally excluded from Git. The
 `m5_application_sales.csv` output can be uploaded through the standard API;
 M5 stores act as customer proxies because the source contains no shoppers.
 
+## UCI and Iowa public-sales workflows
+
+The public-sales pipeline downloads, verifies, cleans, aggregates, and analyzes
+two additional official datasets:
+
+- UCI Online Retail II, a 2009-2011 UK online retailer transaction workbook.
+- Iowa Liquor Sales, 2024, the complete five-part calendar-year export.
+
+```powershell
+python -m scripts.run_public_sales_pipeline `
+  --source uci `
+  --data-dir C:\path\to\public-sales\raw\uci `
+  --output-dir C:\path\to\public-sales\artifacts\uci `
+  --stage all
+
+python -m scripts.run_public_sales_pipeline `
+  --source iowa `
+  --data-dir C:\path\to\public-sales\raw\iowa `
+  --output-dir C:\path\to\public-sales\artifacts\iowa `
+  --stage all
+```
+
+Downloads are atomic and every preparation summary records the source URL,
+byte size, SHA-256, cleaning counts, output grain, source revenue, application
+revenue, and rounding reconciliation. The UCI output is denominated in GBP;
+the Iowa output is denominated in USD. Do not combine the two monetary series
+without an explicit exchange-rate policy. Raw and generated files remain
+outside version control. See the [verified run report](docs/public-sales-datasets.md)
+for exact results, licenses, caveats, and artifact contracts.
+
 ## API overview
 
 | Endpoint | Purpose |
@@ -149,5 +179,6 @@ update. See `CONTRIBUTING.md` for the exact workflow.
 ## Architecture and security
 
 - [Architecture](docs/architecture.md)
+- [Public sales datasets](docs/public-sales-datasets.md)
 - [Security model](SECURITY.md)
 - [Contribution workflow](CONTRIBUTING.md)

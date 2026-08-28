@@ -10,6 +10,8 @@ htmlcov/
 *.sqlite3
 data/uploads/
 data/m5/
+data/uci/
+data/iowa/
 artifacts/
 *.joblib
 frontend/node_modules/

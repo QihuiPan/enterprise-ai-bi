@@ -21,6 +21,7 @@ services:
       APP_ENV: docker
       DATABASE_URL: postgresql+psycopg://enterprise_bi:enterprise_bi_local@postgres:5432/enterprise_bi
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      MAX_UPLOAD_BYTES: 67108864
     ports:
       - "8000:8000"
     depends_on:
