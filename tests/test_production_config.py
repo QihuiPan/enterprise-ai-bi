@@ -66,3 +66,7 @@ def test_codeql_can_read_private_repository_workflow_metadata() -> None:
     assert "  actions: read\n" in permissions
     assert "  contents: read\n" in permissions
     assert "  security-events: write\n" in permissions
+
+    assert "upload: never" in workflow
+    assert "uses: actions/upload-artifact@v7" in workflow
+    assert "path: ${{ steps.analyze.outputs.sarif-output }}" in workflow

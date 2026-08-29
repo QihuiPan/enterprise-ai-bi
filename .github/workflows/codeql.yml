@@ -23,4 +23,13 @@ jobs:
       - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-      - uses: github/codeql-action/analyze@v4
+      - id: analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+      - name: Preserve CodeQL SARIF report
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: ${{ steps.analyze.outputs.sarif-output }}
+          retention-days: 14

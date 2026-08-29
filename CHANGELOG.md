@@ -37,6 +37,9 @@ must include an English entry under `Unreleased` before it is committed.
   analysis can report status without failing GitHub's integration permission check.
 - Made the changelog gate decode Git output explicitly as UTF-8 so it runs
   reliably on Windows hosts with non-UTF-8 default subprocess encodings.
+- Preserved CodeQL SARIF reports as Actions artifacts when the private repository
+  plan does not expose Code Scanning, keeping analysis evidence without a false
+  workflow failure from an unavailable Security-tab upload.
 - Added reproducible UCI Online Retail II and Iowa Liquor Sales 2024 pipelines
   with atomic official-source downloads, SHA-256 provenance, schema adapters,
   source-aware cleaning, scalable aggregation, application CSVs, revenue

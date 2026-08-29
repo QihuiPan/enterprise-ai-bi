@@ -36,6 +36,9 @@ to the repository owner with reproduction steps and impact.
 - Production startup rejects API keys shorter than 32 characters, wildcard CORS,
   and malformed origin allowlists.
 - GitHub dependency updates, container builds, and CodeQL scanning are configured.
+  Because this private repository's current account plan does not expose GitHub
+  Code Scanning, each CodeQL matrix job retains its SARIF report as a 14-day
+  Actions artifact instead of attempting an unavailable Security-tab upload.
 - API errors avoid returning stack traces to clients.
 
 ## Deployment limitations
