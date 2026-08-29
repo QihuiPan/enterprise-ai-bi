@@ -16,6 +16,7 @@ def changed_files(base: str) -> set[str]:
         ["git", "diff", "--name-only", f"{base}...HEAD"],
         check=True,
         capture_output=True,
+        encoding="utf-8",
         text=True,
     )
     return {line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()}
@@ -26,6 +27,7 @@ def file_at_revision(revision: str, path: str) -> str:
         ["git", "show", f"{revision}:{path}"],
         check=False,
         capture_output=True,
+        encoding="utf-8",
         text=True,
     )
     return result.stdout if result.returncode == 0 else ""

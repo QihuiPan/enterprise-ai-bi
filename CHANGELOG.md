@@ -35,6 +35,8 @@ must include an English entry under `Unreleased` before it is committed.
   the verified pnpm 11 setup action.
 - Granted CodeQL read-only access to private repository workflow metadata so
   analysis can report status without failing GitHub's integration permission check.
+- Made the changelog gate decode Git output explicitly as UTF-8 so it runs
+  reliably on Windows hosts with non-UTF-8 default subprocess encodings.
 - Added reproducible UCI Online Retail II and Iowa Liquor Sales 2024 pipelines
   with atomic official-source downloads, SHA-256 provenance, schema adapters,
   source-aware cleaning, scalable aggregation, application CSVs, revenue
