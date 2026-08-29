@@ -1,0 +1,115 @@
+name: enterprise-ai-bi-production
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-enterprise_bi}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [database]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_ADMIN_USER:-postgres} -d ${POSTGRES_DB:-enterprise_bi}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  database-init:
+    image: postgres:17-alpine
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB:-enterprise_bi}
+      PGUSER: ${POSTGRES_ADMIN_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set POSTGRES_ADMIN_PASSWORD}
+      DATABASE_USER: ${DATABASE_USER:-enterprise_bi_app}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD}
+    command: ["psql", "--file=/init/init-app-role.sql"]
+    volumes:
+      - ./deploy/postgres/init-app-role.sql:/init/init-app-role.sql:ro
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    command:
+      [
+        "uvicorn",
+        "backend.app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--proxy-headers",
+        "--forwarded-allow-ips=*",
+        "--no-access-log",
+      ]
+    read_only: true
+    tmpfs: [/tmp]
+    environment:
+      APP_ENV: production
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${POSTGRES_DB:-enterprise_bi}
+      DATABASE_USER: ${DATABASE_USER:-enterprise_bi_app}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-67108864}
+      API_KEY: ${API_KEY:?Set API_KEY}
+      API_KEY_HEADER: ${API_KEY_HEADER:-X-API-Key}
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-120}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      RATE_LIMIT_MAX_CLIENTS: ${RATE_LIMIT_MAX_CLIENTS:-10000}
+    expose: ["8000"]
+    networks: [application, database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      database-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ""
+        VITE_API_KEY_HEADER: ${API_KEY_HEADER:-X-API-Key}
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:80"
+    networks: [application]
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  application:
+  database:
+    internal: true
+
+volumes:
+  postgres_data:

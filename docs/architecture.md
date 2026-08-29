@@ -4,18 +4,21 @@
 
 ```mermaid
 flowchart LR
-    U[Manager / Analyst] -->|CSV or demo seed| API[Domain FastAPI routers]
+    U[Manager / Analyst] -->|CSV, filters, or question| G[API key / rate limit]
+    G --> API[Domain FastAPI routers]
     API --> V[Validation and ingestion services]
     V --> DB[(SQLite local / PostgreSQL Docker)]
     DB --> B[Request-scoped business facade]
     B -->|one shared sales snapshot| A[Analytics service]
     B -->|one shared sales snapshot| M[Configurable ML services]
-    A --> O[Grounded agent orchestrator]
+    A --> Q[Approved natural-language query planner]
+    Q --> O[Grounded agent orchestrator]
     M --> O
     O --> E[Executive Agent]
     API --> UI[React API client and state hook]
     UI --> C[Dashboard components]
     E --> API
+    API --> H[Health / metrics / JSON access logs]
 ```
 
 ## Encapsulation boundaries
@@ -29,16 +32,20 @@ flowchart LR
 - Analytics operate as pure methods over a supplied frame. ML classes own their
   parameters and expose one `run` method; stable function wrappers preserve the
   original external Python interface.
+- One validated filter object applies date, region, category, and product
+  constraints consistently across analytics and machine-learning endpoints.
 - The React API client owns HTTP/error behavior, the dashboard hook owns async
   state transitions, and focused components own charts, lists, and intelligence
   presentation. `App.jsx` only composes the page.
 
 ## Trust boundary
 
-The orchestrator is a read-only decision layer. It classifies a question and
-calls registered Python tools. It cannot submit generated SQL, mutate sales
-records, or invent a metric that is absent from a tool result. Each response
-returns `agents_used`, `tools_used`, and structured `evidence`.
+The orchestrator is a read-only decision layer. Specialist intents call
+registered Python tools. General business questions pass through a bounded
+parser that can select only approved metrics, dimensions, periods, ranking
+limits, and trend grains; it never generates SQL. Each response returns
+`agents_used`, `tools_used`, structured `evidence`, and, when applicable, an
+auditable query plan plus chart-ready data.
 
 ## Data lifecycle
 
@@ -56,19 +63,25 @@ returns `agents_used`, `tools_used`, and structured `evidence`.
 
 ## ML design
 
-- Forecasting uses a linear trend baseline with a chronological holdout. MAE,
-  RMSE, and residual-spread intervals are surfaced with the forecast.
+- Forecasting compares linear trend, a recursive three-month trailing mean, and
+  a 12-month seasonal-naive candidate when enough history exists. Selection
+  uses a chronological holdout; MAE, RMSE, baseline improvement, candidate
+  scores, and residual-spread intervals are surfaced with the forecast.
 - Segmentation uses recency, frequency, and monetary features, StandardScaler,
   and deterministic K-Means initialization.
-- Anomaly detection uses standardized transaction features and Isolation Forest.
+- Anomaly detection uses standardized sales-record features and Isolation Forest.
   Flags are explicitly described as investigation leads, not fraud labels.
 
-The baseline models are deliberately explainable. A production iteration can
-add seasonal forecasting, drift monitoring, experiment tracking, and reviewed
-model promotion without changing the API boundary.
+The models are deliberately explainable. A production iteration can add richer
+covariates, drift monitoring, experiment tracking, and reviewed model promotion
+without changing the API boundary.
 
 ## Deployment topology
 
-Docker Compose runs PostgreSQL, the FastAPI service, and an Nginx-hosted React
-bundle. Health checks prevent the dashboard from starting before the database
-and API are ready. Local development uses SQLite by default to minimize setup.
+The production Compose profile runs PostgreSQL, a one-shot least-privilege role
+initializer, an unprivileged FastAPI service, and an Nginx-hosted React bundle on
+one public origin. The API connects with a dedicated non-superuser database role;
+its root filesystem is read-only, and readiness checks prevent the dashboard from
+starting before dependencies are available.
+TLS and secret injection remain responsibilities of the selected host. Local
+development uses SQLite by default to minimize setup.

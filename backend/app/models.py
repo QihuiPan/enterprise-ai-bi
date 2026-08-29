@@ -6,6 +6,7 @@ from sqlalchemy import Date, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.database import Base
+from data_pipeline.validation import IDENTITY_MAX_LENGTHS
 
 
 class SalesRecord(Base):
@@ -17,12 +18,22 @@ class SalesRecord(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    order_id: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    order_id: Mapped[str] = mapped_column(
+        String(IDENTITY_MAX_LENGTHS["order_id"]), unique=True, nullable=False
+    )
     order_date: Mapped[date] = mapped_column(Date, nullable=False)
-    customer_id: Mapped[str] = mapped_column(String(80), nullable=False)
-    region: Mapped[str] = mapped_column(String(80), nullable=False)
-    category: Mapped[str] = mapped_column(String(80), nullable=False)
-    product: Mapped[str] = mapped_column(String(120), nullable=False)
+    customer_id: Mapped[str] = mapped_column(
+        String(IDENTITY_MAX_LENGTHS["customer_id"]), nullable=False
+    )
+    region: Mapped[str] = mapped_column(
+        String(IDENTITY_MAX_LENGTHS["region"]), nullable=False
+    )
+    category: Mapped[str] = mapped_column(
+        String(IDENTITY_MAX_LENGTHS["category"]), nullable=False
+    )
+    product: Mapped[str] = mapped_column(
+        String(IDENTITY_MAX_LENGTHS["product"]), nullable=False
+    )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[float] = mapped_column(Float, nullable=False)
     discount: Mapped[float] = mapped_column(Float, nullable=False)

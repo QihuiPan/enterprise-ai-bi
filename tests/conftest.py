@@ -7,8 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 os.environ["APP_ENV"] = "test"
-os.environ["DATABASE_URL"] = "sqlite:///./test_enterprise_ai_bi.db"
+os.environ.setdefault("DATABASE_URL", "sqlite:///./test_enterprise_ai_bi.db")
 os.environ["LOKY_MAX_CPU_COUNT"] = "2"
+os.environ["API_KEY"] = ""
+os.environ["RATE_LIMIT_REQUESTS"] = "1000"
 
 from backend.app.database import Base, engine  # noqa: E402
 from backend.app.main import app  # noqa: E402

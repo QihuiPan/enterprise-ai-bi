@@ -1,19 +1,35 @@
 import { request } from "./client";
 
-const DASHBOARD_REQUESTS = {
-  kpis: "/api/analytics/kpis",
-  trends: "/api/analytics/trends",
-  regions: "/api/analytics/breakdown/region",
-  forecast: "/api/ml/forecast?horizon=3",
-  segments: "/api/ml/segments",
-  anomalies: "/api/ml/anomalies?limit=6",
-};
+export const EMPTY_FILTERS = Object.freeze({
+  start_date: "",
+  end_date: "",
+  region: "",
+  category: "",
+  product: "",
+});
 
-export async function fetchDashboard() {
-  const entries = await Promise.all(
-    Object.entries(DASHBOARD_REQUESTS).map(async ([key, path]) => [key, await request(path)]),
+export function normalizeFilters(filters = EMPTY_FILTERS) {
+  return Object.fromEntries(
+    Object.keys(EMPTY_FILTERS).map((key) => [key, String(filters[key] ?? "").trim()]),
   );
-  return Object.fromEntries(entries);
+}
+
+export function withFilterQuery(path, filters = EMPTY_FILTERS) {
+  const [pathname, existingQuery = ""] = path.split("?");
+  const query = new URLSearchParams(existingQuery);
+  Object.entries(normalizeFilters(filters)).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  const serialized = query.toString();
+  return serialized ? `${pathname}?${serialized}` : pathname;
+}
+
+export async function fetchDashboard(filters = EMPTY_FILTERS) {
+  return request(withFilterQuery("/api/dashboard", filters));
+}
+
+export function fetchFilterOptions() {
+  return request("/api/analytics/filter-options");
 }
 
 export function loadDemoData() {
@@ -26,10 +42,10 @@ export function uploadSalesCsv(file) {
   return request("/api/data/upload", { method: "POST", body });
 }
 
-export function queryInsight(question) {
-  return request("/api/insights/query", {
+export function queryInsight(question, filters = EMPTY_FILTERS, currency = "USD") {
+  return request(withFilterQuery("/api/insights/query", filters), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, currency }),
   });
 }

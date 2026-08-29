@@ -18,7 +18,7 @@ class SalesAnomalyDetector:
 
     def run(self, frame: pd.DataFrame) -> dict:
         if len(frame) < 20:
-            raise ValueError("At least 20 transactions are required for anomaly detection.")
+            raise ValueError("At least 20 records are required for anomaly detection.")
         if not 1 <= self.limit <= 50:
             raise ValueError("Anomaly limit must be between 1 and 50.")
         if not 0 < self.contamination <= 0.5:
@@ -40,7 +40,7 @@ class SalesAnomalyDetector:
             self.limit, "anomaly_score"
         )
         return {
-            "method": "Isolation Forest on standardized transaction features",
+            "method": "Isolation Forest on standardized sales-record features",
             "records_evaluated": len(frame),
             "anomaly_count": int((predictions == -1).sum()),
             "anomalies": [

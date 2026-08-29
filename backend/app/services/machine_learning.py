@@ -6,6 +6,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.app.services.analytics import sales_frame
+from backend.app.services.filtering import SalesFilters
 from ml.anomaly_detection import SalesAnomalyDetector
 from ml.forecasting import RevenueForecaster
 from ml.segmentation import CustomerSegmenter
@@ -18,8 +19,10 @@ class MachineLearningService:
     frame: pd.DataFrame
 
     @classmethod
-    def from_session(cls, session: Session) -> MachineLearningService:
-        return cls(sales_frame(session))
+    def from_session(
+        cls, session: Session, filters: SalesFilters | None = None
+    ) -> MachineLearningService:
+        return cls(sales_frame(session, filters))
 
     def revenue_forecast(self, horizon: int = 3) -> dict:
         return RevenueForecaster(horizon=horizon).run(self.frame)
@@ -31,13 +34,19 @@ class MachineLearningService:
         return SalesAnomalyDetector(limit=limit).run(self.frame)
 
 
-def revenue_forecast(session: Session, horizon: int = 3) -> dict:
-    return MachineLearningService.from_session(session).revenue_forecast(horizon)
+def revenue_forecast(
+    session: Session, horizon: int = 3, filters: SalesFilters | None = None
+) -> dict:
+    return MachineLearningService.from_session(session, filters).revenue_forecast(horizon)
 
 
-def customer_segments(session: Session, clusters: int = 4) -> dict:
-    return MachineLearningService.from_session(session).customer_segments(clusters)
+def customer_segments(
+    session: Session, clusters: int = 4, filters: SalesFilters | None = None
+) -> dict:
+    return MachineLearningService.from_session(session, filters).customer_segments(clusters)
 
 
-def sales_anomalies(session: Session, limit: int = 10) -> dict:
-    return MachineLearningService.from_session(session).sales_anomalies(limit)
+def sales_anomalies(
+    session: Session, limit: int = 10, filters: SalesFilters | None = None
+) -> dict:
+    return MachineLearningService.from_session(session, filters).sales_anomalies(limit)

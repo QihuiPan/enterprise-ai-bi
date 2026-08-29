@@ -25,9 +25,15 @@ class CustomerSegmenter:
             monetary=("revenue", "sum"),
         )
         if len(rfm) < 2:
-            raise ValueError("At least two customers are required for segmentation.")
+            raise ValueError("At least two entities are required for segmentation.")
 
-        cluster_count = min(max(2, self.requested_clusters), len(rfm))
+        features = rfm[["recency", "frequency", "monetary"]]
+        distinct_profiles = len(features.drop_duplicates())
+        cluster_count = min(max(2, self.requested_clusters), len(rfm), distinct_profiles)
+        if cluster_count < 2:
+            raise ValueError(
+                "At least two distinct entity profiles are required for segmentation."
+            )
         model = make_pipeline(
             StandardScaler(),
             KMeans(
@@ -36,9 +42,7 @@ class CustomerSegmenter:
                 n_init=10,
             ),
         )
-        rfm["cluster"] = model.fit_predict(
-            rfm[["recency", "frequency", "monetary"]]
-        )
+        rfm["cluster"] = model.fit_predict(features)
 
         cluster_value = rfm.groupby("cluster")["monetary"].mean().sort_values()
         names = ["Emerging", "Core", "High Value", "Champions"]
@@ -61,7 +65,7 @@ class CustomerSegmenter:
             .sort_values("total_revenue", ascending=False)
         )
         return {
-            "method": "RFM features standardized before K-Means",
+            "method": "RFM entity features standardized before K-Means",
             "cluster_count": cluster_count,
             "segments": [
                 {

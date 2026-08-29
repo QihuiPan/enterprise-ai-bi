@@ -9,6 +9,33 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
+def _recursive_average(values: np.ndarray, steps: int, window: int = 3) -> np.ndarray:
+    history = values.astype(float).tolist()
+    predictions: list[float] = []
+    for _ in range(steps):
+        prediction = float(np.mean(history[-min(window, len(history)) :]))
+        predictions.append(prediction)
+        history.append(prediction)
+    return np.asarray(predictions)
+
+
+def _recursive_seasonal(values: np.ndarray, steps: int, season: int = 12) -> np.ndarray:
+    history = values.astype(float).tolist()
+    predictions: list[float] = []
+    for _ in range(steps):
+        prediction = float(history[-season])
+        predictions.append(prediction)
+        history.append(prediction)
+    return np.asarray(predictions)
+
+
+def _metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
+    return {
+        "mae": round(float(mean_absolute_error(actual, predicted)), 2),
+        "rmse": round(float(math.sqrt(mean_squared_error(actual, predicted))), 2),
+    }
+
+
 @dataclass(frozen=True)
 class RevenueForecaster:
     horizon: int = 3
@@ -19,47 +46,126 @@ class RevenueForecaster:
     def run(self, frame: pd.DataFrame) -> dict:
         if not 1 <= self.horizon <= 12:
             raise ValueError("Forecast horizon must be between 1 and 12 months.")
-        monthly = (
+        observed = (
             frame.assign(period=frame["order_date"].dt.to_period("M"))
-            .groupby("period", as_index=False)["revenue"]
+            .groupby("period")["revenue"]
             .sum()
-            .sort_values("period")
+            .sort_index()
         )
+        data_start = pd.Timestamp(frame["order_date"].min()).normalize()
+        data_end = pd.Timestamp(frame["order_date"].max()).normalize()
+        monthly_aggregate_input = bool(frame["order_date"].dt.is_month_start.all())
+        excluded_periods: list[dict[str, str]] = []
+        excluded_labels: set[pd.Period] = set()
+        first_period = observed.index[0]
+        last_period = observed.index[-1]
+        if (
+            not monthly_aggregate_input
+            and data_start > pd.Timestamp(first_period.start_time).normalize()
+        ):
+            excluded_labels.add(first_period)
+            excluded_periods.append(
+                {
+                    "period": str(first_period),
+                    "reason": "incomplete_start_boundary",
+                    "observed_through": data_start.date().isoformat(),
+                }
+            )
+        if (
+            not monthly_aggregate_input
+            and data_end < pd.Timestamp(last_period.end_time).normalize()
+        ):
+            excluded_labels.add(last_period)
+            excluded_periods.append(
+                {
+                    "period": str(last_period),
+                    "reason": "incomplete_end_boundary",
+                    "observed_through": data_end.date().isoformat(),
+                }
+            )
+        observed = observed.drop(list(excluded_labels), errors="ignore")
+        if observed.empty:
+            raise ValueError(
+                "No complete monthly periods are available for forecasting."
+            )
+        complete_periods = pd.period_range(
+            observed.index.min(), observed.index.max(), freq="M"
+        )
+        monthly = observed.reindex(complete_periods, fill_value=0.0)
         if len(monthly) < self.minimum_history_months:
             raise ValueError(
                 f"At least {self.minimum_history_months} months of data are required "
                 "for forecasting."
             )
 
-        values = monthly["revenue"].to_numpy(dtype=float)
+        values = monthly.to_numpy(dtype=float)
         holdout = max(2, int(math.ceil(len(values) * self.holdout_fraction)))
         split = len(values) - holdout
         x = np.arange(len(values)).reshape(-1, 1)
 
         evaluation_model = LinearRegression().fit(x[:split], values[:split])
-        predicted_test = evaluation_model.predict(x[split:])
-        mae = mean_absolute_error(values[split:], predicted_test)
-        rmse = math.sqrt(mean_squared_error(values[split:], predicted_test))
+        holdout_predictions = {
+            "linear_trend": np.maximum(0, evaluation_model.predict(x[split:])),
+            "trailing_mean_3": np.maximum(
+                0, _recursive_average(values[:split], holdout, window=3)
+            ),
+        }
+        if split >= 12:
+            holdout_predictions["seasonal_naive_12"] = np.maximum(
+                0, _recursive_seasonal(values[:split], holdout, season=12)
+            )
+        candidate_evaluation = {
+            name: _metrics(values[split:], prediction)
+            for name, prediction in holdout_predictions.items()
+        }
+        selected_model = min(
+            candidate_evaluation,
+            key=lambda name: (candidate_evaluation[name]["rmse"], name),
+        )
 
-        model = LinearRegression().fit(x, values)
-        residual_std = float(np.std(values - model.predict(x)))
+        final_linear_model = LinearRegression().fit(x, values)
         future_x = np.arange(len(values), len(values) + self.horizon).reshape(-1, 1)
-        future_values = np.maximum(0, model.predict(future_x))
-        last_period = monthly["period"].iloc[-1]
+        future_candidates = {
+            "linear_trend": np.maximum(0, final_linear_model.predict(future_x)),
+            "trailing_mean_3": np.maximum(
+                0, _recursive_average(values, self.horizon, window=3)
+            ),
+        }
+        if len(values) >= 12:
+            future_candidates["seasonal_naive_12"] = np.maximum(
+                0, _recursive_seasonal(values, self.horizon, season=12)
+            )
+        future_values = future_candidates[selected_model]
+        selected_errors = values[split:] - holdout_predictions[selected_model]
+        residual_std = float(np.std(selected_errors))
+        baseline_rmse = candidate_evaluation["linear_trend"]["rmse"]
+        selected_rmse = candidate_evaluation[selected_model]["rmse"]
+        improvement = (
+            (baseline_rmse - selected_rmse) / baseline_rmse * 100 if baseline_rmse else 0.0
+        )
+        last_period = monthly.index[-1]
         future_periods = [
             last_period + index for index in range(1, self.horizon + 1)
         ]
 
         return {
-            "model": "linear_trend_baseline",
+            "model": selected_model,
+            "baseline_model": "linear_trend",
             "evaluation": {
                 "holdout_months": holdout,
-                "mae": round(float(mae), 2),
-                "rmse": round(float(rmse), 2),
+                **candidate_evaluation[selected_model],
+                "improvement_vs_linear_rmse_pct": round(float(improvement), 2),
             },
+            "candidate_evaluation": candidate_evaluation,
+            "input_grain": (
+                "monthly_aggregate"
+                if monthly_aggregate_input
+                else "transaction_observations"
+            ),
+            "excluded_periods": excluded_periods,
             "history": [
-                {"period": str(row.period), "revenue": round(float(row.revenue), 2)}
-                for row in monthly.itertuples(index=False)
+                {"period": str(period), "revenue": round(float(value), 2)}
+                for period, value in monthly.items()
             ],
             "forecast": [
                 {
@@ -76,8 +182,10 @@ class RevenueForecaster:
                 for period, value in zip(future_periods, future_values, strict=True)
             ],
             "caveat": (
-                "Linear trend baseline; intervals reflect historical residual spread, "
-                "not causal certainty."
+                "Chronological candidate selection against a linear baseline; "
+                "month-start-only inputs are treated as complete monthly aggregates, "
+                "while incomplete transaction boundary months are excluded; intervals "
+                "reflect holdout residual spread, not causal certainty."
             ),
         }
 

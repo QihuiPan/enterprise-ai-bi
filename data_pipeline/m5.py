@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from data_pipeline.validation import REQUIRED_COLUMNS, SalesFrameValidator
+
 M5_SOURCE = "https://doi.org/10.5281/zenodo.10203108"
 M5_FILES = {
     "calendar.csv": {
@@ -225,19 +227,8 @@ def to_application_frame(frame: pd.DataFrame) -> pd.DataFrame:
     positive["region"] = positive["state_id"]
     positive["product"] = positive["store_id"] + " " + positive["category"]
     positive["discount"] = 0.0
-    return positive[
-        [
-            "order_id",
-            "order_date",
-            "customer_id",
-            "region",
-            "category",
-            "product",
-            "quantity",
-            "unit_price",
-            "discount",
-        ]
-    ]
+    validated = SalesFrameValidator().validate(positive.loc[:, REQUIRED_COLUMNS])
+    return validated.loc[:, REQUIRED_COLUMNS].copy()
 
 
 @dataclass(frozen=True)
@@ -249,9 +240,23 @@ class M5ArtifactWriter:
         prepared_path = self.output_dir / "m5_store_category_daily.csv"
         application_path = self.output_dir / "m5_application_sales.csv"
         summary_path = self.output_dir / "m5_preparation_summary.json"
+        application = to_application_frame(frame)
+        validated_application = SalesFrameValidator().validate(application)
+        application_revenue = float(validated_application["revenue"].sum())
+        source_revenue = float(summary["revenue"])
+        reconciled_summary = {
+            **summary,
+            "application_rows": int(len(application)),
+            "application_revenue": round(application_revenue, 2),
+            "revenue_reconciliation_delta": round(
+                application_revenue - source_revenue, 2
+            ),
+        }
         frame.to_csv(prepared_path, index=False)
-        to_application_frame(frame).to_csv(application_path, index=False)
-        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        application.to_csv(application_path, index=False)
+        summary_path.write_text(
+            json.dumps(reconciled_summary, indent=2), encoding="utf-8"
+        )
         return {
             "prepared": prepared_path,
             "application": application_path,

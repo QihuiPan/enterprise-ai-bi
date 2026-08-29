@@ -13,10 +13,20 @@
 - Source date range: 2011-01-29 through 2016-05-22
 - Units represented: 66,927,173
 - Source-price revenue: USD 191,577,546.04
+- Canonical application revenue: USD 191,576,058.44
+- Application-to-source reconciliation delta: USD -1,487.60
 
 All three source files passed the published byte-size and MD5 checks before
 preparation. The source files, prepared CSV files, predictions, and serialized
 model are operational artifacts and are not committed to Git.
+
+The application amount above was revalidated from the archived 58,105-row M5
+application artifact with the production `SalesFrameValidator`. M5 derives one
+weighted unit price per store-category-day record; the upload contract then
+stores that price to two decimals before recalculating revenue. The disclosed
+USD -1,487.60 difference is the resulting precision reconciliation, not missing
+source records. New preparation summaries store the application row count,
+application revenue, and reconciliation delta automatically.
 
 ## Optimized model-selection protocol
 
@@ -74,16 +84,20 @@ They use observed lag values as they become available through the holdout. They
 are not recursive 28-day forecasts, the official M5 hierarchical WRMSSE, or a
 Kaggle leaderboard result.
 
-## Application verification
+## Application-contract verification
 
-After loading the generated application CSV into PostgreSQL, the following
-checks passed during the first verified run:
+The archived full application CSV was re-read through the canonical validator,
+confirming 58,105 positive-sales records and USD 191,576,058.44 in application
+revenue. Automated tests also verify the M5 adapter/writer round trip and the
+shared ingestion, KPI, forecast, segmentation, anomaly, and dashboard contracts
+on deterministic fixtures.
 
-- KPI aggregation across all 58,105 positive-sales records
-- Existing monthly revenue forecast endpoint
-- Four-cluster store-proxy segmentation
-- Isolation Forest evaluation of all loaded records
-- Dashboard HTTP 200 response
+A full 58,105-row M5 load into the production PostgreSQL Compose profile has not
+been executed in this source checkpoint and is not claimed as verified. The
+first green GitHub container workflow validates the production PostgreSQL
+topology with a deterministic smoke dataset; loading the archived M5 artifact
+and recording its target-host resource profile remain release-environment
+acceptance steps.
 
 M5 contains no shopper identity, so the application maps each store to a
 customer proxy. The dedicated M5 model predicts store-category unit sales;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+import numpy as np
 import pandas as pd
 
 REQUIRED_COLUMNS = (
@@ -16,7 +17,17 @@ REQUIRED_COLUMNS = (
     "discount",
 )
 IDENTITY_COLUMNS = ("order_id", "customer_id", "region", "category", "product")
+IDENTITY_MAX_LENGTHS = {
+    "order_id": 80,
+    "customer_id": 80,
+    "region": 80,
+    "category": 80,
+    "product": 120,
+}
 NUMERIC_COLUMNS = ("quantity", "unit_price", "discount")
+POSTGRES_INTEGER_MAX = 2_147_483_647
+MAX_UNIT_PRICE = 1_000_000_000_000.0
+MAX_DATASET_REVENUE = 1_000_000_000_000_000.0
 
 
 class DataValidationError(ValueError):
@@ -38,7 +49,22 @@ class SalesFrameValidator:
             raise DataValidationError(["The uploaded CSV contains no data rows."])
 
         data = frame.copy()
-        data.columns = [self.canonical_name(column) for column in data.columns]
+        canonical_columns = [self.canonical_name(column) for column in data.columns]
+        duplicate_columns = sorted(
+            set(
+                pd.Index(canonical_columns)[
+                    pd.Index(canonical_columns).duplicated(keep=False)
+                ].tolist()
+            )
+        )
+        if duplicate_columns:
+            raise DataValidationError(
+                [
+                    "Column names collide after normalization: "
+                    f"{', '.join(duplicate_columns)}."
+                ]
+            )
+        data.columns = canonical_columns
         missing = [column for column in REQUIRED_COLUMNS if column not in data.columns]
         if missing:
             raise DataValidationError(
@@ -57,9 +83,31 @@ class SalesFrameValidator:
         data["quantity"] = data["quantity"].astype(int)
         data["unit_price"] = data["unit_price"].astype(float).round(2)
         data["discount"] = data["discount"].astype(float).round(4)
-        data["revenue"] = (
-            data["quantity"] * data["unit_price"] * (1 - data["discount"])
-        ).round(2)
+        with np.errstate(over="ignore", invalid="ignore"):
+            data["revenue"] = (
+                data["quantity"] * data["unit_price"] * (1 - data["discount"])
+            ).round(2)
+        non_finite_revenue = ~np.isfinite(data["revenue"])
+        if non_finite_revenue.any():
+            raise DataValidationError(
+                [
+                    "Derived 'revenue' has "
+                    f"{int(non_finite_revenue.sum())} non-finite values."
+                ]
+            )
+        with np.errstate(over="ignore", invalid="ignore"):
+            revenue_total = data["revenue"].to_numpy(dtype=float).sum()
+        if not np.isfinite(revenue_total):
+            raise DataValidationError(
+                ["Aggregate 'revenue' is non-finite for the uploaded dataset."]
+            )
+        if revenue_total > MAX_DATASET_REVENUE:
+            raise DataValidationError(
+                [
+                    "Aggregate 'revenue' cannot exceed "
+                    f"{MAX_DATASET_REVENUE:.0f} for one analytical dataset."
+                ]
+            )
         return data
 
     @staticmethod
@@ -71,9 +119,39 @@ class SalesFrameValidator:
                 issues.append(
                     f"Column '{column}' has {int(invalid.sum())} blank values."
                 )
+            nul_characters = data[column].str.contains("\x00", regex=False, na=False)
+            if nul_characters.any():
+                issues.append(
+                    f"Column '{column}' has {int(nul_characters.sum())} values "
+                    "containing a NUL control character."
+                )
+            too_long = (
+                data[column]
+                .str.len()
+                .gt(IDENTITY_MAX_LENGTHS[column])
+                .fillna(False)
+            )
+            if too_long.any():
+                issues.append(
+                    f"Column '{column}' has {int(too_long.sum())} values longer than "
+                    f"{IDENTITY_MAX_LENGTHS[column]} characters."
+                )
 
     @staticmethod
     def _normalize_dates(data: pd.DataFrame, issues: list[str]) -> None:
+        parsed_for_timezone = pd.to_datetime(
+            data["order_date"], errors="coerce", format="mixed"
+        )
+        timezone_markers = parsed_for_timezone.map(
+            lambda value: not pd.isna(value)
+            and getattr(value, "tzinfo", None) is not None
+        )
+        if timezone_markers.any():
+            issues.append(
+                "Column 'order_date' has "
+                f"{int(timezone_markers.sum())} timezone-aware values; provide local "
+                "calendar dates without offsets."
+            )
         parsed_dates = pd.to_datetime(data["order_date"], errors="coerce", utc=True)
         invalid_count = int(parsed_dates.isna().sum())
         if invalid_count:
@@ -89,6 +167,11 @@ class SalesFrameValidator:
                 issues.append(
                     f"Column '{column}' has {invalid_count} non-numeric values."
                 )
+            non_finite = data[column].notna() & ~np.isfinite(data[column])
+            if non_finite.any():
+                issues.append(
+                    f"Column '{column}' has {int(non_finite.sum())} non-finite values."
+                )
 
     @staticmethod
     def _validate_constraints(data: pd.DataFrame, issues: list[str]) -> None:
@@ -97,13 +180,25 @@ class SalesFrameValidator:
             issues.append(
                 f"Column 'order_id' has {duplicate_count} duplicates."
             )
-        if data["quantity"].notna().any() and (data["quantity"] <= 0).any():
+        finite_quantity = data["quantity"].notna() & np.isfinite(data["quantity"])
+        if (finite_quantity & data["quantity"].le(0)).any():
             issues.append("Column 'quantity' must contain positive values.")
-        if data["unit_price"].notna().any() and (data["unit_price"] < 0).any():
+        if (finite_quantity & data["quantity"].mod(1).ne(0)).any():
+            issues.append("Column 'quantity' must contain whole numbers.")
+        if (finite_quantity & data["quantity"].gt(POSTGRES_INTEGER_MAX)).any():
+            issues.append(
+                f"Column 'quantity' cannot exceed {POSTGRES_INTEGER_MAX}."
+            )
+
+        finite_price = data["unit_price"].notna() & np.isfinite(data["unit_price"])
+        if (finite_price & data["unit_price"].lt(0)).any():
             issues.append("Column 'unit_price' cannot contain negative values.")
-        if data["discount"].notna().any() and (
-            ~data["discount"].between(0, 1)
-        ).any():
+        if (finite_price & data["unit_price"].gt(MAX_UNIT_PRICE)).any():
+            issues.append(
+                f"Column 'unit_price' cannot exceed {MAX_UNIT_PRICE:.0f}."
+            )
+        finite_discount = data["discount"].notna() & np.isfinite(data["discount"])
+        if (finite_discount & ~data["discount"].between(0, 1)).any():
             issues.append("Column 'discount' must be between 0 and 1.")
 
 

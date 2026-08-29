@@ -1,0 +1,76 @@
+name: Containers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: api
+            dockerfile: backend/Dockerfile
+          - name: dashboard
+            dockerfile: frontend/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build ${{ matrix.name }} image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: enterprise-ai-bi-${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_ADMIN_PASSWORD: ci-postgres-admin-password
+      DATABASE_PASSWORD: ci-database-app-password
+      CORS_ORIGINS: http://127.0.0.1:8080
+      API_KEY: ci-api-key-with-at-least-thirty-two-characters
+      BIND_ADDRESS: 127.0.0.1
+      APP_PORT: 8080
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate production Compose configuration
+        run: docker compose -f docker-compose.production.yml config --quiet
+      - name: Start the production stack
+        run: docker compose -f docker-compose.production.yml up --detach --build
+      - name: Wait for the public health endpoint
+        run: |
+          for attempt in {1..90}; do
+            if curl --fail --silent http://127.0.0.1:8080/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.production.yml ps
+          docker compose -f docker-compose.production.yml logs
+          exit 1
+      - name: Exercise authenticated ingestion and dashboard APIs
+        run: |
+          curl --fail --silent --show-error \
+            -X POST -H "X-API-Key: ${API_KEY}" \
+            http://127.0.0.1:8080/api/data/demo -o /tmp/demo.json
+          curl --fail --silent --show-error \
+            -H "X-API-Key: ${API_KEY}" \
+            http://127.0.0.1:8080/api/dashboard -o /tmp/dashboard.json
+          python -c "import json; data=json.load(open('/tmp/dashboard.json')); assert data['kpis']['order_count'] == 720; assert data['products']"
+      - name: Verify the API database role is not privileged
+        run: |
+          test "$(docker compose -f docker-compose.production.yml exec -T postgres \
+            psql -U postgres -d enterprise_bi -tAc \
+            "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname='enterprise_bi_app'")" = "f"
+      - name: Stop the production stack
+        if: always()
+        run: docker compose -f docker-compose.production.yml down --volumes

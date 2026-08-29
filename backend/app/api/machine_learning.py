@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.app.api.dependencies import DbSession
+from backend.app.api.dependencies import DbSession, SalesFilterParams
 from backend.app.services import machine_learning
 
 router = APIRouter(prefix="/api/ml", tags=["machine-learning"])
@@ -21,22 +21,31 @@ def _run_model(operation: Callable[[], dict]) -> dict:
 @router.get("/forecast")
 def get_forecast(
     session: DbSession,
+    filters: SalesFilterParams,
     horizon: Annotated[int, Query(ge=1, le=12)] = 3,
 ) -> dict:
-    return _run_model(lambda: machine_learning.revenue_forecast(session, horizon))
+    return _run_model(
+        lambda: machine_learning.revenue_forecast(session, horizon, filters)
+    )
 
 
 @router.get("/segments")
 def get_segments(
     session: DbSession,
+    filters: SalesFilterParams,
     clusters: Annotated[int, Query(ge=2, le=8)] = 4,
 ) -> dict:
-    return _run_model(lambda: machine_learning.customer_segments(session, clusters))
+    return _run_model(
+        lambda: machine_learning.customer_segments(session, clusters, filters)
+    )
 
 
 @router.get("/anomalies")
 def get_anomalies(
     session: DbSession,
+    filters: SalesFilterParams,
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
 ) -> dict:
-    return _run_model(lambda: machine_learning.sales_anomalies(session, limit))
+    return _run_model(
+        lambda: machine_learning.sales_anomalies(session, limit, filters)
+    )

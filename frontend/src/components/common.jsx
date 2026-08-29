@@ -1,4 +1,4 @@
-import { Database, LoaderCircle, Sparkles } from "lucide-react";
+import { Database, FileUp, LoaderCircle, Sparkles } from "lucide-react";
 
 export function MetricCard({ label, value, detail, icon: Icon, tone = "mint" }) {
   return (
@@ -21,7 +21,7 @@ export function Panel({ eyebrow, title, action, className = "", id, children }) 
   );
 }
 
-export function EmptyState({ onDemo, busy }) {
+export function EmptyState({ onDemo, onUpload, busy }) {
   return (
     <main className="empty-state">
       <div className="empty-orbit"><Database size={38} /></div>
@@ -30,11 +30,17 @@ export function EmptyState({ onDemo, busy }) {
       <p>
         Load the deterministic portfolio dataset or upload a validated CSV. The
         agents will only answer from records and model outputs that exist here.
+        Loading another source replaces the active dataset only after validation.
       </p>
-      <button className="primary-button" onClick={onDemo} disabled={busy}>
-        {busy ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}
-        Load demo data
-      </button>
+      <div className="empty-actions">
+        <button className="primary-button" onClick={onDemo} disabled={busy}>
+          {busy ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}
+          Load demo data
+        </button>
+        <button className="secondary-button" onClick={onUpload} disabled={busy}>
+          <FileUp size={17} />Upload sales CSV
+        </button>
+      </div>
     </main>
   );
 }

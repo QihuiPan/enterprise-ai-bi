@@ -35,10 +35,26 @@ non-negative sales dollars. Valid lines are aggregated to
 store-county-category-month records. Missing county or category labels receive
 explicit fallback values.
 
+Although the catalog describes the `rows.csv` distribution as `text/csv`, the
+official endpoint currently responds with an `application/zip` attachment named
+`iowa_liquor_sales_2024_1261_rows.zip`; the adapter verifies and streams that
+delivered archive format.
+
 Both adapters derive an application unit price as aggregate revenue divided by
 aggregate quantity. The application schema stores prices to two decimals, so a
 small, explicitly reported reconciliation delta is expected. Order identifiers
-are deterministic within each generated artifact.
+are deterministic within each generated artifact, but they identify aggregate
+application records rather than source orders. Consequently, dashboard record
+counts and average aggregate-record values must not be interpreted as source
+order counts or source average order value. Revenue, units, time, geography, and
+the documented entity dimensions remain valid at each artifact's output grain.
+
+The Walmart M5 application export follows the same rule even though it is built
+by a separate daily store-category pipeline. Its export is passed through the
+canonical API validator before writing, and its preparation summary records the
+application row count, application revenue, and source reconciliation delta.
+See [Walmart M5 Training Results](m5-training-results.md) for the verified M5
+amounts and output-grain caveats.
 
 ## Verified run on August 28, 2026
 
@@ -61,12 +77,16 @@ Verified source hashes:
 - UCI: `572e36277c2390fbfde10664750731e0a86f55e33470d91919085f0408e67bfb`
 - Iowa: `b750f8bb1d9f629c738427f24ea2c7b6629842f9102ac9a88f0226ebf82549f5`
 
-The analysis stage uses the existing linear monthly revenue baseline. UCI
-excludes partial December 2011 from model fitting and reports a five-month
-holdout MAE of GBP 238,289.51 and RMSE of GBP 280,314.31. Iowa uses all twelve
-months and reports a three-month holdout MAE of USD 3,703,899.62 and RMSE of
-USD 3,898,586.44. These are project holdout diagnostics, not causal forecasts
-or guaranteed future performance.
+The analysis stage evaluates chronological candidates against the linear trend
+baseline and selects the lowest holdout RMSE. UCI excludes partial December
+2011 from model fitting; the selected 12-month seasonal-naive candidate reports
+a five-month holdout MAE of GBP 36,655.94 and RMSE of GBP 57,411.11. That is a
+79.52% RMSE improvement over the linear trend baseline (GBP 280,314.31). Iowa
+has only twelve monthly observations, so the available linear trend and
+three-month trailing-mean candidates were compared; linear trend remained best
+with a three-month holdout MAE of USD 3,703,899.62 and RMSE of USD 3,898,586.44.
+These are project holdout diagnostics, not causal forecasts or guaranteed
+future performance.
 
 ## Artifacts
 

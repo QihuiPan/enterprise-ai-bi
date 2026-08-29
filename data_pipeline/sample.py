@@ -12,7 +12,14 @@ def build_demo_frame(rows: int = 720, seed: int = 42) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     end = pd.Timestamp("2026-06-30")
     start = end - timedelta(days=729)
-    dates = start + pd.to_timedelta(rng.integers(0, 730, rows), unit="D")
+    dates = pd.Series(
+        start + pd.to_timedelta(rng.integers(0, 730, rows), unit="D")
+    )
+    if rows >= 2:
+        # The deterministic demo represents a known complete observation window.
+        # Boundary records make that coverage explicit to conservative analytics.
+        dates.iloc[0] = start
+        dates.iloc[1] = end
 
     product_catalog = {
         "Analytics": [("Insight Pro", 249.0), ("Metric Studio", 169.0)],

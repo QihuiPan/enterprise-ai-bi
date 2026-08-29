@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 import numpy as np
 import pandas as pd
 
 from data_pipeline import m5
 from data_pipeline.m5 import prepare_m5_frame, to_application_frame, write_prepared_m5
+from data_pipeline.validation import SalesFrameValidator
 from ml.m5_forecasting import save_m5_model, train_m5_model
 
 
@@ -75,6 +77,27 @@ def test_m5_preparation_aggregates_every_item_day(tmp_path) -> None:
     application = to_application_frame(frame)
     assert application["order_id"].is_unique
     assert set(application["region"]) == {"CA"}
+    assert application["unit_price"].equals(application["unit_price"].round(2))
+
+
+def test_m5_application_frame_uses_canonical_upload_precision() -> None:
+    frame = pd.DataFrame(
+        {
+            "d": ["d_1"],
+            "order_date": ["2020-01-01"],
+            "store_id": ["CA_1"],
+            "state_id": ["CA"],
+            "category": ["FOODS"],
+            "quantity": [3],
+            "unit_price": [1.2346],
+        }
+    )
+
+    application = to_application_frame(frame)
+    validated = SalesFrameValidator().validate(application)
+
+    assert application.loc[0, "unit_price"] == 1.23
+    assert validated.loc[0, "revenue"] == 3.69
 
 
 def test_m5_model_trains_with_temporal_holdout(tmp_path) -> None:
@@ -107,3 +130,13 @@ def test_m5_checksums_and_prepared_artifacts(tmp_path, monkeypatch) -> None:
     frame, summary = prepare_m5_frame(tmp_path, verify_checksums=True)
     paths = write_prepared_m5(frame, summary, tmp_path / "artifacts")
     assert all(path.is_file() for path in paths.values())
+
+    application = pd.read_csv(paths["application"])
+    validated = SalesFrameValidator().validate(application)
+    written_summary = json.loads(paths["summary"].read_text(encoding="utf-8"))
+    application_revenue = round(float(validated["revenue"].sum()), 2)
+    assert written_summary["application_rows"] == len(application)
+    assert written_summary["application_revenue"] == application_revenue
+    assert written_summary["revenue_reconciliation_delta"] == round(
+        application_revenue - summary["revenue"], 2
+    )
