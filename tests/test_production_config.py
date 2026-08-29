@@ -57,3 +57,12 @@ def test_local_container_dashboard_uses_csp_compatible_same_origin_api() -> None
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
 
     assert 'VITE_API_URL: ""' in compose
+
+
+def test_codeql_can_read_private_repository_workflow_metadata() -> None:
+    workflow = Path(".github/workflows/codeql.yml").read_text(encoding="utf-8")
+
+    permissions = workflow.split("permissions:\n", 1)[1].split("\njobs:", 1)[0]
+    assert "  actions: read\n" in permissions
+    assert "  contents: read\n" in permissions
+    assert "  security-events: write\n" in permissions

@@ -33,6 +33,8 @@ must include an English entry under `Unreleased` before it is committed.
   changelog gate that requires a new English bullet under `Unreleased`.
 - Updated CI and security scanning to current Node 24-based action releases and
   the verified pnpm 11 setup action.
+- Granted CodeQL read-only access to private repository workflow metadata so
+  analysis can report status without failing GitHub's integration permission check.
 - Added reproducible UCI Online Retail II and Iowa Liquor Sales 2024 pipelines
   with atomic official-source downloads, SHA-256 provenance, schema adapters,
   source-aware cleaning, scalable aggregation, application CSVs, revenue
