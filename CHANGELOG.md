@@ -152,6 +152,9 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Fixed
 
+- Explicitly excluded the repository-root pytest cache from Docker build
+  contexts so Windows Docker Desktop does not attempt to stat a sandbox-owned
+  test cache before applying recursive ignore rules.
 - Rejected ambiguous or timezone-shifting dates, malformed numeric/currency and
   percentage notation, mixed discount scales, mixed or hidden currency-code
   columns, ragged rows, Unicode header collisions, hostile XLSX dimensions, and
