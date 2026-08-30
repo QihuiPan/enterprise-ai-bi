@@ -10,7 +10,8 @@ analytics and ML tools and expose the evidence behind every conclusion.
 
 ## What is included
 
-- CSV ingestion, normalization, data-quality checks, and database loading
+- Guided CSV, TSV, and XLSX sales-data imports with column mapping, preview,
+  normalization, data-quality checks, and atomic database activation
 - KPI cards, trends, ranked product analysis, date/region/category/product
   filters, and regional drill-down
 - Source-currency display for USD and GBP datasets without implicit FX conversion
@@ -34,7 +35,8 @@ analytics and ML tools and expose the evidence behind every conclusion.
 
 ```mermaid
 flowchart LR
-    S[CSV / public datasets / demo] --> V[Validation and transformation]
+    S[CSV / TSV / XLSX / public datasets / demo] --> P[Preview and column mapping]
+    P --> V[Validation and transformation]
     V --> D[(PostgreSQL / SQLite)]
     D --> B[Shared business snapshot]
     B --> A[Analytics and filters]
@@ -102,25 +104,64 @@ build passes the same value automatically.
 - M5 candidate and selection records use explicit dataclasses while generated
   training artifacts remain outside version control.
 
-## Upload schema
+## Flexible sales-data import
 
-CSV files must contain:
+The dashboard can import bounded UTF-8 CSV, TSV, and `.xlsx` workbooks even when
+their headers do not use the application's canonical names. Import is a
+deliberate two-step workflow:
 
-| Column | Meaning |
+1. Choose a file and, for a workbook, a worksheet.
+2. Preview its columns, sample rows, and conservative mapping suggestions.
+3. Confirm or correct the mapping, source currency, and dataset meaning.
+4. Activate the dataset. The server verifies that its SHA-256 still matches the
+   preview; the existing dataset is replaced only after the file and mapping
+   pass full validation.
+
+Every import needs a sales date plus one of these monetary contracts:
+
+| Required facts | How revenue is handled |
 | --- | --- |
-| `order_id` | Unique order identifier |
-| `order_date` | ISO date or another pandas-readable date |
-| `customer_id` | Customer identifier |
-| `region` | Sales region |
-| `category` | Product category |
-| `product` | Product name |
-| `quantity` | Positive integer |
-| `unit_price` | Non-negative amount |
-| `discount` | Decimal between 0 and 1 |
+| `order_date` and direct `revenue` | The source line total is preserved in the canonical sales facts. |
+| `order_date`, `quantity`, and `unit_price` | Revenue is derived as `quantity * unit_price * (1 - discount)`. |
 
-Revenue is derived server-side as
-`quantity * unit_price * (1 - discount)` so uploaded totals cannot override the
-calculation.
+Order ID, customer ID, region, category, product, and discount are optional in
+the flexible workflow. The preview makes every generated identifier or default
+label explicit and reports the analytical features that will be unavailable or
+less meaningful as a result. Repeated, blank, or missing order IDs receive
+deterministic unique row IDs and are labeled as sales records rather than
+orders. A missing customer field becomes one `UNSPECIFIED-ENTITY` instead of
+inventing customers. Suggestions never activate data by themselves; ambiguous
+columns require a manual choice.
+
+Choose the file's source currency during import. A mapped currency-code column
+must contain one consistent `USD` or `GBP` value on every row; recognizable
+currency columns cannot be ignored, and mixed or unsupported currencies fail
+closed. Inline symbols/codes are checked by the same rule. When direct revenue
+is mapped without quantity, revenue analysis remains available but unit KPIs and
+quantity-based model features are explicitly unavailable rather than synthesized.
+
+The legacy `POST /api/data/upload` route remains available for existing tools.
+Its optional multipart `source_currency` field defaults to `USD`, and
+`source_profile=order_level` is the safe default. Prepared project artifacts
+must explicitly send `source_profile=m5`, `source_profile=uci`, or
+`source_profile=iowa`; UCI is locked to GBP and M5/Iowa are locked to USD.
+Each prepared choice accepts only the complete project-generated output contract with
+the exact canonical nine-column mapping, row/date coverage, IDs, and documented
+dimensions. This is structural validation of an operator-selected profile, not
+authentication against a trusted artifact digest. Use the automatic profile for
+a subset or a modified derivative.
+It accepts a UTF-8 CSV with the nine canonical columns below and applies the
+same final validator:
+
+`order_id`, `order_date`, `customer_id`, `region`, `category`, `product`,
+`quantity`, `unit_price`, and `discount`.
+
+This is a flexible adapter for tabular sales data, not a general-purpose
+analytics engine for unrelated domains. Negative sales/returns, currencies
+other than the existing USD/GBP source-label choices, implicit currency
+conversion, legacy `.xls`, macro-enabled workbooks, and encrypted workbooks are
+not accepted. Source IDs that must retain leading zeroes should be stored as
+text in Excel.
 
 ## Walmart M5 workflow
 
@@ -147,12 +188,15 @@ Reported metrics are a one-step project holdout evaluation, not the
 competition's official WRMSSE.
 
 Generated data and model files are intentionally excluded from Git. The
-`m5_application_sales.csv` output can be uploaded through the standard API;
+`m5_application_sales.csv` output can be uploaded through the guided import by
+choosing **Prepared Walmart M5**, or through the API with
+`source_profile=m5&source_currency=USD` multipart fields.
 M5 stores act as customer proxies because the source contains no shoppers. Its
 generated IDs are store-category-day records, not orders, so record count and
-average record value are not order count or average order value. The dashboard
-detects the M5, UCI, and Iowa generated-ID prefixes and changes these labels and
-natural-language caveats accordingly. The application export is passed through
+average record value are not order count or average order value. The server
+validates the explicit profile against its required mappings, currency, entity
+IDs, and generated-ID prefix before applying these labels and natural-language
+caveats. The application export is passed through
 the same canonical upload validator used by the API, including its two-decimal
 unit-price precision. `m5_preparation_summary.json` records `application_rows`,
 `application_revenue`, and `revenue_reconciliation_delta` so the effect of that
@@ -184,7 +228,12 @@ Downloads are atomic and every preparation summary records the source URL,
 byte size, SHA-256, cleaning counts, output grain, source revenue, application
 revenue, and rounding reconciliation. The UCI output is denominated in GBP;
 the Iowa output is denominated in USD. Do not combine the two monetary series
-without an explicit exchange-rate policy. Raw and generated files remain
+without an explicit exchange-rate policy. In the guided import choose
+**Prepared UCI Online Retail II** or **Prepared Iowa Liquor Sales 2024**. API
+clients must send `source_profile=uci&source_currency=GBP` or
+`source_profile=iowa&source_currency=USD`; ID prefixes are validated but never
+used alone as provenance. The prepared choice also checks the complete artifact
+coverage and row contract. Raw and generated files remain
 outside version control. See the [verified run report](docs/public-sales-datasets.md)
 for exact results, licenses, caveats, and artifact contracts.
 
@@ -193,7 +242,10 @@ for exact results, licenses, caveats, and artifact contracts.
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /api/data/demo` | Replace current data with deterministic demo records |
-| `POST /api/data/upload` | Validate and ingest a CSV file |
+| `POST /api/data/preview` | Inspect a CSV, TSV, or XLSX file without changing active data |
+| `POST /api/data/import` | Validate a mapping and atomically activate the sales dataset |
+| `GET /api/data/profile` | Describe the active source, mapping, generated fields, and warnings |
+| `POST /api/data/upload` | Compatibility route for a canonical nine-column CSV |
 | `GET /api/analytics/filter-options` | Available dates and business dimensions |
 | `GET /api/dashboard` | One-snapshot dashboard analytics and optional ML results |
 | `GET /api/analytics/kpis` | Core portfolio KPIs |
@@ -214,6 +266,9 @@ sales table once per card. Date and dimensional filters are applied by the
 database before rows are converted for analytics. If a narrow selection is too
 small for forecasting, segmentation, or anomaly detection, core KPIs and charts
 still return with a model-specific explanation.
+Dashboard, filter-option, and profile responses carry the active dataset
+fingerprint. The browser accepts a refresh only when all fingerprints and
+currencies match, and retries once if an import changes the dataset mid-refresh.
 
 Example bounded questions include:
 
@@ -227,9 +282,14 @@ chart data. Change explanations, forecasts, customer intelligence, anomalies,
 and executive summaries route to grounded specialist tools. SQL text and data
 mutation requests are rejected before execution.
 
-Set `currency` to `USD` or `GBP` in the insight request body, or use the same
-query parameter on the executive report. This changes source-currency labels
-only and never performs an implicit exchange-rate conversion.
+The active dataset profile is authoritative for monetary labels in insights and
+executive reports. Currency is selected during import and cannot be overridden
+by a request to relabel values; the system never performs implicit exchange-rate
+conversion. A database created before profiles existed is the deliberate
+exception: startup preserves its rows under an unverified **Legacy sales
+snapshot**, lets the operator choose the display currency, and requires a source
+re-import before currency or entity meaning is treated as verified. Legacy row
+shapes or ID prefixes never establish currency provenance.
 
 ![Natural-language BI query plan and chart evidence](docs/assets/natural-language-insight.png)
 

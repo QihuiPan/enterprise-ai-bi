@@ -11,6 +11,20 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Added
 
+- Added a stateless, bounded CSV, TSV, and XLSX sales-data import workflow with
+  conservative column suggestions, explicit manual mapping, full-file
+  validation, preview fingerprint enforcement, atomic data/profile activation,
+  selected-sheet provenance, source-semantic warnings,
+  dashboard guidance, and regression coverage while preserving the canonical
+  CSV compatibility endpoint.
+- Added reviewed prepared-profile choices for Walmart M5, UCI Online Retail II,
+  and Iowa Liquor Sales 2024, with required mapping, entity, currency, and ID
+  contract validation instead of implicit provenance detection.
+- Added dataset-version binding across dashboard, filter-option, and profile
+  responses so a concurrent replacement is retried instead of mixing snapshots.
+- Added persisted source-currency, observed-unit, entity-grain, selected-sheet,
+  anomaly-feature, and import-warning metadata so every dashboard reload keeps
+  the activated dataset's analytical meaning and provenance.
 - Added cross-dashboard date, region, category, and product filters, regional
   chart drill-down, source-currency formatting, and optional session-scoped API
   key controls backed by one reusable filter contract across analytics, ML,
@@ -60,10 +74,20 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Changed
 
+- Made active dataset currency authoritative across the dashboard, grounded
+  insights, and executive reports; importers can choose USD or GBP and map an
+  optional per-row currency-code column, but cannot relabel or combine sources.
+- Preserved source precision for flexibly mapped unit prices and discounts while
+  keeping the established rounded canonical/public-pipeline output contract.
 - Consolidated dashboard refreshes into one request-scoped sales snapshot,
   pushed date and dimensional predicates into SQL, selected only analytical
   columns, and replaced full-table filter-option loading with database-side
   distinct and date queries for large public datasets.
+- Set PostgreSQL analytical sessions to repeatable-read isolation and documented
+  complete-transaction retry behavior for concurrent writer conflicts.
+- Preserved pre-profile databases under a conservative, currency-unverified
+  legacy profile instead of inferring trusted public-dataset provenance from row
+  shapes or IDs; SQLite and PostgreSQL startup now serialize that backfill.
 - Made natural-language and executive-agent monetary text honor the selected
   USD or GBP source currency without implying exchange-rate conversion.
 - Propagated a customized API-key header into the production dashboard build
@@ -128,6 +152,29 @@ must include an English entry under `Unreleased` before it is committed.
 
 ### Fixed
 
+- Rejected ambiguous or timezone-shifting dates, malformed numeric/currency and
+  percentage notation, mixed discount scales, mixed or hidden currency-code
+  columns, ragged rows, Unicode header collisions, hostile XLSX dimensions, and
+  changed-after-preview files before atomic activation.
+- Bounded declared and chunked upload request bodies before multipart parsing,
+  and bounded logical delimited records before CSV field lists are materialized.
+- Aligned the Nginx request cap above the API file limit plus multipart overhead,
+  and gated prepared-profile review on the exact canonical nine-column mapping.
+- Kept each import response bound to the profile written by its own transaction
+  and report a guided import as superseded if a newer activation wins before the
+  dashboard refresh completes.
+- Required complete prepared M5, UCI, and Iowa artifacts and rejected generic
+  fallback dimensions before assigning their reviewed aggregate semantics, while
+  documenting that profile selection is an operator assertion rather than digest
+  authentication.
+- Prevented generated quantity and unspecified entities from appearing as
+  observed unit KPIs, anomaly features, customer counts, or RFM inputs, and made
+  order/transaction/receipt plus customer/store/account labels source-aware.
+- Returned a structured unavailable result for generic entity/entities questions
+  when an imported dataset has no usable entity mapping.
+- Preserved exact Excel identity values during mapping, sanitized lazy workbook
+  parse failures, bounded physical worksheet extents, and returned UTC-qualified
+  import timestamps.
 - Guarded dashboard and insight updates by request generation, tracked concurrent
   loading correctly, and removed stale evidence immediately after data replacement.
 - Rejected fractional, non-finite, derived-overflow, and database-overflow numeric

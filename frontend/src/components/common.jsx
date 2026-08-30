@@ -21,24 +21,24 @@ export function Panel({ eyebrow, title, action, className = "", id, children }) 
   );
 }
 
-export function EmptyState({ onDemo, onUpload, busy }) {
+export function EmptyState({ onDemo, onImport, busy }) {
   return (
     <main className="empty-state">
       <div className="empty-orbit"><Database size={38} /></div>
       <span className="eyebrow">DATA WORKSPACE</span>
       <h1>Connect evidence before asking for insight.</h1>
       <p>
-        Load the deterministic portfolio dataset or upload a validated CSV. The
-        agents will only answer from records and model outputs that exist here.
-        Loading another source replaces the active dataset only after validation.
+        Load the deterministic portfolio dataset or import your own structured
+        sales file. You can preview Excel, CSV, and TSV data, review suggested
+        column matches, and activate it only after full validation.
       </p>
       <div className="empty-actions">
         <button className="primary-button" onClick={onDemo} disabled={busy}>
           {busy ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}
           Load demo data
         </button>
-        <button className="secondary-button" onClick={onUpload} disabled={busy}>
-          <FileUp size={17} />Upload sales CSV
+        <button className="secondary-button" onClick={onImport} disabled={busy}>
+          <FileUp size={17} />Import sales data
         </button>
       </div>
     </main>

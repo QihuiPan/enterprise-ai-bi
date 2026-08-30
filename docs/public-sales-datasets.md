@@ -98,5 +98,11 @@ Each source produces three ignored artifacts:
 
 The verified UCI application CSV is approximately 3.4 MB. The verified Iowa
 application CSV is approximately 45.6 MB and fits under the Docker profile's
-64 MiB upload limit. Loading either file replaces the current dataset when the
-upload endpoint uses its default `replace=true` setting.
+64 MiB upload limit. In the dashboard choose **Prepared UCI Online Retail II**
+or **Prepared Iowa Liquor Sales 2024** before activation. API clients must use
+the multipart pairs `source_profile=uci&source_currency=GBP` or
+`source_profile=iowa&source_currency=USD`; the safe default never infers
+provenance from an ID prefix. These prepared choices require the complete project
+artifacts and exact canonical mapping; load subsets or derivatives with the
+automatic profile. A successful import atomically replaces the active dataset
+and profile.

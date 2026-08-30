@@ -5,6 +5,7 @@ from collections.abc import Callable
 from fastapi import APIRouter
 
 from backend.app.api.dependencies import DbSession, SalesFilterParams
+from backend.app.dataset_version import active_dataset_version
 from backend.app.services.business import BusinessIntelligence
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -21,6 +22,7 @@ def _optional_model(operation: Callable[[], dict]) -> tuple[dict | None, str | N
 def get_dashboard(session: DbSession, filters: SalesFilterParams) -> dict:
     """Build the dashboard from one filtered database snapshot."""
 
+    dataset_version = active_dataset_version(session)
     business = BusinessIntelligence(session, filters)
     forecast, forecast_error = _optional_model(
         lambda: business.machine_learning.revenue_forecast(horizon=3)
@@ -49,4 +51,5 @@ def get_dashboard(session: DbSession, filters: SalesFilterParams) -> dict:
         "segments": segments,
         "anomalies": anomalies,
         "model_errors": model_errors,
+        "dataset_version": dataset_version,
     }

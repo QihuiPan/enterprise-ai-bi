@@ -31,7 +31,15 @@ class SalesAnomalyDetector:
                 random_state=self.random_state,
             ),
         )
-        features = frame[ANOMALY_FEATURES]
+        requested_features = frame.attrs.get("record_semantics", {}).get(
+            "anomaly_features", ANOMALY_FEATURES
+        )
+        selected_features = [
+            feature for feature in requested_features if feature in ANOMALY_FEATURES
+        ]
+        if not selected_features:
+            raise ValueError("At least one observed numeric feature is required.")
+        features = frame[selected_features]
         predictions = model.fit_predict(features)
         scores = -model.decision_function(features)
 
@@ -40,7 +48,11 @@ class SalesAnomalyDetector:
             self.limit, "anomaly_score"
         )
         return {
-            "method": "Isolation Forest on standardized sales-record features",
+            "method": (
+                "Isolation Forest on standardized observed sales-record features: "
+                f"{', '.join(selected_features)}"
+            ),
+            "features": selected_features,
             "records_evaluated": len(frame),
             "anomaly_count": int((predictions == -1).sum()),
             "anomalies": [

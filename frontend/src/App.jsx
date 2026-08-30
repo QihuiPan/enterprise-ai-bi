@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useState } from "react";
 import {
   Activity,
   ArrowDownRight,
@@ -19,6 +19,8 @@ import {
 } from "./components/charts";
 import { EmptyState, MetricCard, Panel } from "./components/common";
 import { DashboardControls, RuntimePreferences } from "./components/DashboardControls";
+import { DataImportDialog } from "./components/DataImportDialog";
+import { DatasetProfileNotice } from "./components/DatasetProfileNotice";
 import { IntelligenceSection } from "./components/IntelligenceSection";
 import { AnomalyList, CustomerSegments } from "./components/lists";
 import { useBusinessDashboard } from "./hooks/useBusinessDashboard";
@@ -44,49 +46,54 @@ export default function App() {
     insight,
     filters,
     filterOptions,
+    datasetProfile,
     currency,
     apiKey,
     busy,
     error,
     refresh,
     loadDemo,
-    upload,
+    importData,
     ask,
     applyFilters,
     resetFilters,
     setCurrency,
     saveApiKey,
   } = useBusinessDashboard();
-  const fileRef = useRef(null);
-
-  async function handleUpload(event) {
-    const file = event.target.files?.[0];
-    if (file) await upload(file);
-    event.target.value = "";
-  }
+  const [importOpen, setImportOpen] = useState(false);
+  const hasActiveData = Boolean(dashboard || datasetProfile);
 
   if (!dashboard) {
     return (
-      <div className="app-shell empty-shell">
-        <header className="empty-header">
-          <Brand />
-          <RuntimePreferences
-            currency={currency}
-            apiKey={apiKey}
+      <>
+        <div className="app-shell empty-shell">
+          <header className="empty-header">
+            <Brand />
+            <RuntimePreferences
+              currency={currency}
+              apiKey={apiKey}
+              busy={busy}
+              onCurrencyChange={setCurrency}
+              onSaveApiKey={saveApiKey}
+              compact
+            />
+          </header>
+          {error && <div className="error-banner">{error}</div>}
+          <EmptyState
+            onDemo={loadDemo}
+            onImport={() => setImportOpen(true)}
             busy={busy}
-            onCurrencyChange={setCurrency}
-            onSaveApiKey={saveApiKey}
-            compact
           />
-        </header>
-        {error && <div className="error-banner">{error}</div>}
-        <input ref={fileRef} type="file" accept=".csv" hidden onChange={handleUpload} />
-        <EmptyState
-          onDemo={loadDemo}
-          onUpload={() => fileRef.current?.click()}
+        </div>
+        <DataImportDialog
+          open={importOpen}
           busy={busy}
+          currency={currency}
+          hasActiveData={hasActiveData}
+          onClose={() => setImportOpen(false)}
+          onImport={importData}
         />
-      </div>
+      </>
     );
   }
 
@@ -105,14 +112,17 @@ export default function App() {
     entity_count_label: "Customers",
     average_value_label: "Average order value",
     average_frequency_label: "Average orders",
+    units_available: true,
   };
+  const unitsAvailable = recordSemantics.units_available !== false;
   const changeAvailable = kpis.month_over_month_available
     && kpis.month_over_month_change_pct !== null;
   const changePositive = changeAvailable && kpis.month_over_month_change_pct >= 0;
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <>
+      <div className="app-shell">
+        <aside className="sidebar">
         <Brand />
         <div className="nav-group">
           <a className="nav-item active" href="#overview"><LayoutDashboard size={18} />Overview</a>
@@ -123,9 +133,9 @@ export default function App() {
           <span><span className="status-dot" />Evidence connected</span>
           <p>{number.format(kpis.order_count)} validated {recordSemantics.record_count_label.toLowerCase()}</p>
         </div>
-      </aside>
+        </aside>
 
-      <main className="workspace" id="overview">
+        <main className="workspace" id="overview">
         <header className="topbar">
           <div>
             <span className="eyebrow">COMMAND CENTER</span>
@@ -133,13 +143,12 @@ export default function App() {
             <p>{kpis.data_start} — {kpis.data_end}</p>
           </div>
           <div className="top-actions">
-            <input ref={fileRef} type="file" accept=".csv" hidden onChange={handleUpload} />
             <button
               className="secondary-button"
-              onClick={() => fileRef.current?.click()}
+              onClick={() => setImportOpen(true)}
               disabled={busy}
             >
-              <FileUp size={17} />Upload CSV
+              <FileUp size={17} />Import data
             </button>
             <button className="icon-button" aria-label="Refresh dashboard" onClick={refresh} disabled={busy}>
               <RefreshCw className={busy ? "spin" : ""} size={18} />
@@ -148,6 +157,8 @@ export default function App() {
         </header>
 
         {error && <div className="error-banner">{error}</div>}
+
+        <DatasetProfileNotice profile={datasetProfile} />
 
         <DashboardControls
           filters={filters}
@@ -159,11 +170,20 @@ export default function App() {
           onReset={resetFilters}
           onCurrencyChange={setCurrency}
           onSaveApiKey={saveApiKey}
+          currencyLocked={Boolean(datasetProfile && datasetProfile.currency_verified !== false)}
         />
 
         <section className="metric-grid">
           <MetricCard label="Revenue" value={formatCurrency(kpis.total_revenue, currency)} detail="Validated net sales" icon={WalletCards} />
-          <MetricCard label={recordSemantics.record_count_label} value={number.format(kpis.order_count)} detail={`${number.format(kpis.units_sold)} units sold`} icon={Activity} tone="blue" />
+          <MetricCard
+            label={recordSemantics.record_count_label}
+            value={number.format(kpis.order_count)}
+            detail={unitsAvailable
+              ? `${number.format(kpis.units_sold)} units sold`
+              : "Source quantity was not provided"}
+            icon={Activity}
+            tone="blue"
+          />
           <MetricCard label={recordSemantics.entity_count_label} value={number.format(kpis.customer_count)} detail={`${formatCurrency(kpis.average_order_value, currency)} ${recordSemantics.average_value_label.toLowerCase()}`} icon={Users} tone="violet" />
           <MetricCard
             label="Latest month"
@@ -245,8 +265,23 @@ export default function App() {
           </Panel>
         </section>
 
-        <IntelligenceSection insight={insight} busy={busy} currency={currency} onAsk={ask} />
-      </main>
-    </div>
+        <IntelligenceSection
+          insight={insight}
+          busy={busy}
+          currency={currency}
+          entityLabel={recordSemantics.entity_count_label}
+          onAsk={ask}
+        />
+        </main>
+      </div>
+      <DataImportDialog
+        open={importOpen}
+        busy={busy}
+        currency={currency}
+        hasActiveData={hasActiveData}
+        onClose={() => setImportOpen(false)}
+        onImport={importData}
+      />
+    </>
   );
 }

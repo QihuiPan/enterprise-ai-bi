@@ -19,9 +19,9 @@ unverified model claims.
 | Plan phase | Implemented acceptance evidence | Repository status |
 | --- | --- | --- |
 | 0 — Planning and design | Problem statement, entities, API boundaries, architecture diagram, and technical decisions | Complete |
-| 1 — Data engineering | CSV and demo ingestion, schema and quality validation, transformation, PostgreSQL loading, batching, errors, and structured request logging | Complete |
+| 1 — Data engineering | Guided CSV/TSV/XLSX preview and mapping, canonical CSV and demo ingestion, full-file quality validation, atomic data/profile activation, PostgreSQL loading, batching, errors, and structured request logging | Complete |
 | 2 — Analytics and SQL | Tested KPIs, trends, reusable dimensional analytics, filter options, and FastAPI endpoints | Complete |
-| 3 — Dashboard | KPI cards, date/region/category/product filters, region drill-down, customer and product views, source-currency formatting, upload, and responsive React UI | Complete |
+| 3 — Dashboard | KPI cards, date/region/category/product filters, region drill-down, customer and product views, source-currency formatting, guided import review, and responsive React UI | Complete |
 | 4 — Machine learning | Chronologically evaluated forecast candidates, M5 optimized model, RFM/K-Means segmentation, Isolation Forest anomalies, metrics, intervals, and APIs | Complete |
 | 5 — Agent system | Five named roles, approved tools, orchestration, structured outputs, evidence provenance, and no-generated-SQL guardrails | Complete |
 | 6 — Natural-language BI | Bounded English/Chinese query grammar, approved metrics/dimensions/periods, read-only query plans, chart-ready results, explanations, and policy rejection | Complete |
@@ -45,17 +45,27 @@ target-host checks are the runtime evidence rather than a source-code claim.
    months` and inspect its read-only plan, explanation, chart, and evidence.
 6. Ask for a forecast, customer segmentation, anomaly review, and executive
    summary to show specialist routing and grounded multi-agent synthesis.
-7. Upload a prepared M5, UCI, or Iowa artifact and explain its recorded source
-   hash, cleaning contract, reconciliation, and model evaluation.
-8. Show readiness, request metrics, structured logs, and the GitHub Actions
+7. Import a differently shaped CSV, TSV, or XLSX sales file by reviewing the
+   suggested mapping, correcting one field, and activating it. Show that preview
+   does not replace the active data and that the dataset profile records its
+   source, mapping, generated/default fields, warnings, and SHA-256.
+8. Upload a prepared M5, UCI, or Iowa artifact, choose its named prepared profile,
+   and explain the validated currency, entity/record grain, source hash, cleaning
+   contract, reconciliation, and model evaluation.
+9. Show readiness, request metrics, structured logs, and the GitHub Actions
    checks as production-engineering evidence.
 
 ## Engineering decisions worth discussing
 
 - A request-scoped business facade materializes one validated sales snapshot so
   multiple specialists do not repeat relational reads.
-- Revenue is derived from trusted facts during validation rather than accepted
-  from an uploaded total.
+- Revenue is derived from quantity, unit price, and discount when those facts
+  are mapped. Flexible direct-revenue imports preserve the explicitly mapped
+  line total through the same canonical validation and report that choice in the
+  dataset profile.
+- Flexible preview is stateless, bounded, and non-mutating. Activation performs
+  full mapped validation and commits data and semantics together so a failed input
+  cannot partially replace the analytical snapshot.
 - Natural-language requests compile to an enumerated in-memory analytics plan;
   arbitrary SQL and database mutations never reach the execution layer.
 - Forecast candidates are selected on chronological holdouts and keep the
@@ -80,6 +90,10 @@ target-host checks are the runtime evidence rather than a source-code claim.
 - Anomaly scores rank records for investigation; they are not fraud labels.
 - Raw public datasets and trained artifacts remain outside Git because of size,
   redistribution, and reproducibility concerns.
+- Flexible import supports tabular positive-sales facts, not arbitrary business
+  domains. Returns or negative sales, non-UTF-8 text files, legacy or
+  macro-enabled Excel files, encrypted workbooks, currencies other than USD/GBP,
+  and implicit foreign-exchange conversion require an upstream preparation step.
 
 ## Resume-ready description
 

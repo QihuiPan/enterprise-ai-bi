@@ -10,7 +10,15 @@ function Field({ label, children }) {
   return <label className="control-field"><span>{label}</span>{children}</label>;
 }
 
-export function RuntimePreferences({ currency, apiKey, busy, onCurrencyChange, onSaveApiKey, compact = false }) {
+export function RuntimePreferences({
+  currency,
+  apiKey,
+  busy,
+  onCurrencyChange,
+  onSaveApiKey,
+  compact = false,
+  currencyLocked = false,
+}) {
   const [draftApiKey, setDraftApiKey] = useState(apiKey);
 
   useEffect(() => setDraftApiKey(apiKey), [apiKey]);
@@ -26,7 +34,8 @@ export function RuntimePreferences({ currency, apiKey, busy, onCurrencyChange, o
         <select
           value={currency}
           onChange={(event) => onCurrencyChange(event.target.value)}
-          disabled={busy}
+          disabled={busy || currencyLocked}
+          title={currencyLocked ? "Currency is fixed by the active dataset profile." : undefined}
         >
           {SUPPORTED_CURRENCIES.map(({ code, label }) => (
             <option key={code} value={code}>{label}</option>
@@ -65,6 +74,7 @@ export function DashboardControls({
   onReset,
   onCurrencyChange,
   onSaveApiKey,
+  currencyLocked = false,
 }) {
   const [draft, setDraft] = useState(filters);
   const [validationError, setValidationError] = useState("");
@@ -174,8 +184,13 @@ export function DashboardControls({
         busy={busy}
         onCurrencyChange={onCurrencyChange}
         onSaveApiKey={onSaveApiKey}
+        currencyLocked={currencyLocked}
       />
-      <p className="currency-note">Currency changes formatting only; choose the source currency of the loaded dataset.</p>
+      <p className="currency-note">
+        {currencyLocked
+          ? "Currency is fixed by the active dataset profile."
+          : "Choose the source currency; no exchange conversion is performed."}
+      </p>
     </section>
   );
 }

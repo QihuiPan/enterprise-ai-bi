@@ -28,6 +28,7 @@ from backend.app.security import (
     APIKeyMiddleware,
     NoStoreAPIMiddleware,
     RateLimitMiddleware,
+    RequestBodyLimitMiddleware,
 )
 from backend.app.services.analytics import NoDataError
 from backend.app.services.filtering import NoMatchingSalesError
@@ -69,6 +70,10 @@ def create_app(app_settings: Settings = settings) -> FastAPI:
         yield from session_dependency(session_factory)
 
     application.dependency_overrides[get_db] = get_app_db
+    application.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_upload_bytes=app_settings.max_upload_bytes,
+    )
     application.add_middleware(
         RateLimitMiddleware,
         requests=app_settings.rate_limit_requests,

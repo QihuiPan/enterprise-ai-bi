@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from sqlalchemy import event, select
 
+from backend.app.api import data as data_api
 from backend.app.database import SessionLocal, engine
 from backend.app.models import SalesRecord
 from data_pipeline.sample import build_demo_frame
@@ -136,6 +139,82 @@ def test_upload_rejects_exact_duplicate_headers_before_pandas_mangling(client) -
     assert response.json()["detail"] == [
         "Column names collide after normalization: order_id."
     ]
+
+
+def test_legacy_upload_rejects_rows_wider_than_the_header(client) -> None:
+    content = (
+        b"order_id,order_date,customer_id,region,category,product,quantity,unit_price,discount\n"
+        b"EXTRA,A-1,2026-01-01,C-1,North,Hardware,Widget,2,10,0.1\n"
+    )
+
+    response = client.post(
+        "/api/data/upload",
+        files={"file": ("ragged.csv", content, "text/csv")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        "Data row 1 has 10 fields; the header defines 9."
+    ]
+
+
+def test_legacy_upload_does_not_infer_provenance_from_order_id_prefix(client) -> None:
+    content = (
+        b"order_id,order_date,customer_id,region,category,product,quantity,unit_price,discount\n"
+        b"UCI-SPOOF,2026-01-01,C-1,North,Hardware,Widget,2,10,0\n"
+    )
+
+    response = client.post(
+        "/api/data/upload",
+        files={"file": ("ordinary.csv", content, "text/csv")},
+    )
+    profile = client.get("/api/data/profile")
+
+    assert response.status_code == 200
+    assert profile.status_code == 200
+    assert profile.json()["dataset_name"] == "Uploaded order-level sales"
+    assert profile.json()["aggregate_record_proxy"] is False
+    assert profile.json()["record_count_label"] == "Orders"
+    assert profile.json()["currency"] == "USD"
+
+
+def test_legacy_prepared_profile_rejects_conflicting_currency(
+    client, monkeypatch
+) -> None:
+    monkeypatch.setitem(
+        data_api.KNOWN_SOURCE_EXPECTED_SUMMARIES,
+        "uci",
+        (1, date(2009, 12, 1), date(2009, 12, 1)),
+    )
+    content = (
+        b"order_id,order_date,customer_id,region,category,product,quantity,unit_price,discount\n"
+        b"UCI-00000001,2009-12-01,UCI-12345,UK,Online Retail,Daily online retail basket,2,10,0\n"
+    )
+
+    response = client.post(
+        "/api/data/upload",
+        data={"source_profile": "uci", "source_currency": "USD"},
+        files={"file": ("uci.csv", content, "text/csv")},
+    )
+
+    assert response.status_code == 422
+    assert "uses GBP" in " ".join(response.json()["detail"])
+
+
+def test_legacy_upload_rejects_extra_currency_column_before_relabelling(client) -> None:
+    content = (
+        b"order_id,order_date,customer_id,region,category,product,quantity,unit_price,discount,currency\n"
+        b"A-1,2026-01-01,C-1,North,Hardware,Widget,2,10,0,GBP\n"
+    )
+
+    response = client.post(
+        "/api/data/upload",
+        data={"source_currency": "USD"},
+        files={"file": ("extra-currency.csv", content, "text/csv")},
+    )
+
+    assert response.status_code == 422
+    assert "unexpected columns: currency" in " ".join(response.json()["detail"])
 
 
 def test_csv_upload_preserves_na_like_identity_literals(client) -> None:
@@ -359,6 +438,14 @@ def test_dashboard_filters_share_one_backend_contract(client) -> None:
     assert payload["regions"]
     assert payload["categories"]
     assert payload["products"]
+    profile = client.get("/api/data/profile").json()
+    assert payload["dataset_version"]["content_sha256"] == profile["content_sha256"]
+    assert payload["dataset_version"]["currency"] == profile["currency"]
+    assert len(payload["dataset_version"]["profile_sha256"]) == 64
+    assert payload["dataset_version"] == profile["dataset_version"]
+
+    dashboard = client.get("/api/dashboard").json()
+    assert dashboard["dataset_version"] == payload["dataset_version"]
 
     region = payload["regions"][0]
     filtered = client.get("/api/analytics/kpis", params={"region": region})
@@ -416,19 +503,28 @@ def test_dashboard_bundle_reuses_one_snapshot_and_degrades_small_models(client) 
     assert len(sales_queries) == 1
 
 
-def test_dashboard_preserves_complete_monthly_aggregate_semantics(client) -> None:
+def test_dashboard_preserves_complete_monthly_aggregate_semantics(
+    client, monkeypatch
+) -> None:
     header = (
         "order_id,order_date,customer_id,region,category,product,quantity,"
         "unit_price,discount\n"
     )
     rows = "".join(
-        f"IA2024-{month}-{store},2024-{month:02d}-01,STORE-{store},Iowa,"
-        f"Liquor,Bottle,1,{month * 10 + store},0\n"
+        f"IA2024-{((month - 1) * 2 + store):08d},2024-{month:02d}-01,"
+        f"IA-STORE-{store},Iowa,Liquor,Monthly spirits basket,1,"
+        f"{month * 10 + store},0\n"
         for month in range(1, 13)
         for store in (1, 2)
     )
+    monkeypatch.setitem(
+        data_api.KNOWN_SOURCE_EXPECTED_SUMMARIES,
+        "iowa",
+        (24, date(2024, 1, 1), date(2024, 12, 1)),
+    )
     assert client.post(
         "/api/data/upload",
+        data={"source_profile": "iowa"},
         files={"file": ("iowa-monthly.csv", (header + rows).encode(), "text/csv")},
     ).status_code == 200
 
@@ -453,7 +549,7 @@ def test_dashboard_preserves_complete_monthly_aggregate_semantics(client) -> Non
     assert "not source average order value" in insight.json()["answer"].lower()
 
     segment = client.post(
-        "/api/insights/query", json={"question": "Show customer segments"}
+        "/api/insights/query", json={"question": "Show store segments"}
     )
     anomaly = client.post(
         "/api/insights/query", json={"question": "Show unusual transactions"}
@@ -468,7 +564,7 @@ def test_dashboard_preserves_complete_monthly_aggregate_semantics(client) -> Non
     assert "high-value stores" in " ".join(report.json()["recommendations"]).lower()
 
 
-def test_currency_selection_applies_to_insights_and_reports(client) -> None:
+def test_active_profile_currency_overrides_insight_and_report_relabelling(client) -> None:
     assert client.post("/api/data/demo").status_code == 200
     insight = client.post(
         "/api/insights/query",
@@ -481,11 +577,11 @@ def test_currency_selection_applies_to_insights_and_reports(client) -> None:
     )
 
     assert insight.status_code == 200
-    assert "£" in insight.json()["answer"]
-    assert "$" not in insight.json()["answer"]
+    assert "$" in insight.json()["answer"]
+    assert "£" not in insight.json()["answer"]
     assert report.status_code == 200
-    assert "£" in report.json()["summary"]
-    assert "$" not in report.json()["summary"]
+    assert "$" in report.json()["summary"]
+    assert "£" not in report.json()["summary"]
     assert invalid.status_code == 422
 
 

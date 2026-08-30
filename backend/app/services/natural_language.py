@@ -129,6 +129,14 @@ class BusinessQuestionParser:
             "items",
             "customer",
             "customers",
+            "store",
+            "stores",
+            "shop",
+            "shops",
+            "account",
+            "accounts",
+            "entity",
+            "entities",
             "revenue",
             "sales",
             "orders",
@@ -425,6 +433,13 @@ class BusinessQuestionParser:
             "商品",
             "客戶",
             "客户",
+            "門店",
+            "门店",
+            "商店",
+            "帳戶",
+            "账户",
+            "實體",
+            "实体",
             "年",
             "月",
             "季度",
@@ -446,8 +461,6 @@ class BusinessQuestionParser:
             "員工",
             "渠道",
             "通路",
-            "门店",
-            "門店",
             "城市",
             "省份",
             "供应商",
@@ -666,8 +679,15 @@ class BusinessQuestionParser:
                     r"\bcustomer count\b",
                     r"\bnumber of customers\b",
                     r"\bhow many customers\b",
+                    r"\b(?:store|shop|account|entity) count\b",
+                    r"\bnumber of (?:stores|shops|accounts|entities)\b",
+                    r"\bhow many (?:stores|shops|accounts|entities)\b",
                     "客戶數",
                     "客户数",
+                    "門店數",
+                    "门店数",
+                    "帳戶數",
+                    "账户数",
                 ),
             ),
         )
@@ -691,7 +711,22 @@ class BusinessQuestionParser:
                 "品类",
             ),
             "product": (r"\bproducts?\b", r"\bitems?\b", "產品", "产品", "商品"),
-            "customer": (r"\bcustomers?\b", "客戶", "客户"),
+            "customer": (
+                r"\bcustomers?\b",
+                r"\bstores?\b",
+                r"\bshops?\b",
+                r"\baccounts?\b",
+                r"\bentities\b",
+                "客戶",
+                "客户",
+                "門店",
+                "门店",
+                "商店",
+                "帳戶",
+                "账户",
+                "實體",
+                "实体",
+            ),
         }
         for dimension, candidates in patterns.items():
             if any(
@@ -701,12 +736,22 @@ class BusinessQuestionParser:
                 for candidate in candidates
             ):
                 if dimension == "customer" and re.search(
-                    r"\b(customer count|number of customers|how many customers)\b",
+                    r"\b(?:customer|store|shop|account|entity) count\b|"
+                    r"\bnumber of (?:customers|stores|shops|accounts|entities)\b|"
+                    r"\bhow many (?:customers|stores|shops|accounts|entities)\b",
                     question,
                 ):
                     continue
                 if dimension == "customer" and any(
-                    term in question for term in ("客戶數", "客户数")
+                    term in question
+                    for term in (
+                        "客戶數",
+                        "客户数",
+                        "門店數",
+                        "门店数",
+                        "帳戶數",
+                        "账户数",
+                    )
                 ):
                     continue
                 return dimension
@@ -837,6 +882,12 @@ class ApprovedAnalyticsService:
         return self.execute(query)
 
     def execute(self, query: ApprovedAnalyticsQuery) -> dict:
+        semantics = self.analytics.record_semantics()
+        if query.metric == "units" and not semantics.get("units_available", True):
+            raise NoDataError(
+                semantics.get("unit_warning")
+                or "Unit analytics are unavailable because source quantity was not mapped."
+            )
         filtered, period = self._filtered_frame(query.period)
         total_points: int | None = None
         total_results: int | None = None
@@ -1026,6 +1077,12 @@ class ApprovedAnalyticsService:
         if query.dimension is None:
             raise ValueError("A dimension is required for a breakdown.")
         column = _DIMENSION_COLUMNS[query.dimension]
+        if query.dimension == "customer":
+            frame = frame[
+                frame["customer_id"].astype(str) != "UNSPECIFIED-ENTITY"
+            ]
+            if frame.empty:
+                raise NoDataError("No mapped entities are available for this analysis.")
         rows = [
             {query.dimension: str(name), query.metric: self._metric(group, query.metric)}
             for name, group in frame.groupby(column, dropna=False)
@@ -1047,7 +1104,12 @@ class ApprovedAnalyticsService:
         if metric == "units":
             return int(frame["quantity"].sum())
         if metric == "customers":
-            return int(frame["customer_id"].nunique())
+            return int(
+                frame.loc[
+                    frame["customer_id"].astype(str) != "UNSPECIFIED-ENTITY",
+                    "customer_id",
+                ].nunique()
+            )
         if metric == "average_order_value":
             order_revenue = frame.groupby("order_id")["revenue"].sum()
             return round(float(order_revenue.mean()), 2)
@@ -1111,13 +1173,19 @@ class ApprovedAnalyticsService:
             )
 
         dimension = query.dimension or "dimension"
+        dimension_label = (
+            self.analytics.record_semantics()["entity_count_label"].lower()
+            if dimension == "customer"
+            else _DIMENSION_TITLES.get(dimension, dimension).lower()
+        )
         leader = data[0]
         qualifier = "lowest" if query.direction == "asc" else "highest"
         result_description = (
-            f"shows the first {len(data)} of {total_results} ranked results"
+            f"shows the first {len(data)} of {total_results} ranked results "
+            f"for {dimension_label}"
             if truncated
-            else f"contains {len(data)} {dimension} "
-            f"{'result' if len(data) == 1 else 'results'}"
+            else f"contains {len(data)} ranked "
+            f"{'result' if len(data) == 1 else 'results'} for {dimension_label}"
         )
         return (
             f"{leader[dimension]} had the {qualifier} {label} for {period} at "
@@ -1158,6 +1226,8 @@ class ApprovedAnalyticsService:
             return f" {semantics['warning']}"
         if metric == "customers" and semantics["entity_warning"]:
             return f" {semantics['entity_warning']}"
+        if metric == "units" and semantics.get("unit_warning"):
+            return f" {semantics['unit_warning']}"
         return ""
 
     def _format_metric(self, metric: str, value: float | int) -> str:

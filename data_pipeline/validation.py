@@ -16,6 +16,7 @@ REQUIRED_COLUMNS = (
     "unit_price",
     "discount",
 )
+CANONICAL_COLUMNS = (*REQUIRED_COLUMNS, "revenue")
 IDENTITY_COLUMNS = ("order_id", "customer_id", "region", "category", "product")
 IDENTITY_MAX_LENGTHS = {
     "order_id": 80,
@@ -44,7 +45,13 @@ class SalesFrameValidator:
         name = re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower())
         return name.strip("_")
 
-    def validate(self, frame: pd.DataFrame) -> pd.DataFrame:
+    def validate(
+        self,
+        frame: pd.DataFrame,
+        *,
+        preserve_revenue: bool = False,
+        preserve_component_precision: bool = False,
+    ) -> pd.DataFrame:
         if frame.empty:
             raise DataValidationError(["The uploaded CSV contains no data rows."])
 
@@ -65,28 +72,39 @@ class SalesFrameValidator:
                 ]
             )
         data.columns = canonical_columns
-        missing = [column for column in REQUIRED_COLUMNS if column not in data.columns]
+        required_columns = CANONICAL_COLUMNS if preserve_revenue else REQUIRED_COLUMNS
+        missing = [column for column in required_columns if column not in data.columns]
         if missing:
             raise DataValidationError(
                 [f"Missing required columns: {', '.join(missing)}."]
             )
 
-        data = data.loc[:, REQUIRED_COLUMNS].copy()
+        data = data.loc[:, required_columns].copy()
         issues: list[str] = []
         self._normalize_identities(data, issues)
         self._normalize_dates(data, issues)
         self._normalize_numbers(data, issues)
+        if preserve_revenue:
+            self._normalize_revenue(data, issues)
         self._validate_constraints(data, issues)
+        if preserve_revenue:
+            self._validate_revenue_constraints(data, issues)
         if issues:
             raise DataValidationError(issues)
 
         data["quantity"] = data["quantity"].astype(int)
-        data["unit_price"] = data["unit_price"].astype(float).round(2)
-        data["discount"] = data["discount"].astype(float).round(4)
-        with np.errstate(over="ignore", invalid="ignore"):
-            data["revenue"] = (
-                data["quantity"] * data["unit_price"] * (1 - data["discount"])
-            ).round(2)
+        data["unit_price"] = data["unit_price"].astype(float)
+        data["discount"] = data["discount"].astype(float)
+        if not preserve_revenue and not preserve_component_precision:
+            data["unit_price"] = data["unit_price"].round(2)
+            data["discount"] = data["discount"].round(4)
+        if preserve_revenue:
+            data["revenue"] = data["revenue"].astype(float)
+        else:
+            with np.errstate(over="ignore", invalid="ignore"):
+                data["revenue"] = (
+                    data["quantity"] * data["unit_price"] * (1 - data["discount"])
+                ).round(2)
         non_finite_revenue = ~np.isfinite(data["revenue"])
         if non_finite_revenue.any():
             raise DataValidationError(
@@ -109,6 +127,26 @@ class SalesFrameValidator:
                 ]
             )
         return data
+
+    @staticmethod
+    def _normalize_revenue(data: pd.DataFrame, issues: list[str]) -> None:
+        data["revenue"] = pd.to_numeric(data["revenue"], errors="coerce")
+        invalid_count = int(data["revenue"].isna().sum())
+        if invalid_count:
+            issues.append(f"Column 'revenue' has {invalid_count} non-numeric values.")
+        non_finite = data["revenue"].notna() & ~np.isfinite(data["revenue"])
+        if non_finite.any():
+            issues.append(
+                f"Column 'revenue' has {int(non_finite.sum())} non-finite values."
+            )
+
+    @staticmethod
+    def _validate_revenue_constraints(
+        data: pd.DataFrame, issues: list[str]
+    ) -> None:
+        finite_revenue = data["revenue"].notna() & np.isfinite(data["revenue"])
+        if (finite_revenue & data["revenue"].lt(0)).any():
+            issues.append("Column 'revenue' cannot contain negative values.")
 
     @staticmethod
     def _normalize_identities(data: pd.DataFrame, issues: list[str]) -> None:

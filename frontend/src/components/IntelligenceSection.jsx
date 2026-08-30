@@ -30,8 +30,11 @@ function QueryPlanSummary({ plan, explanation }) {
   );
 }
 
-export function IntelligenceSection({ insight, busy, currency, onAsk }) {
+export function IntelligenceSection({ insight, busy, currency, entityLabel, onAsk }) {
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
+  const entityExample = entityLabel && entityLabel !== "Unspecified entities"
+    ? `Top ${entityLabel.toLowerCase()} by revenue`
+    : "Top products by revenue";
 
   function submit(event) {
     event.preventDefault();
@@ -65,7 +68,7 @@ export function IntelligenceSection({ insight, busy, currency, onAsk }) {
             </div>
           </>
         ) : (
-          <div className="insight-placeholder"><Sparkles size={24} /><p>Try “Forecast the next quarter” or “Top customers by revenue”</p></div>
+          <div className="insight-placeholder"><Sparkles size={24} /><p>Try “Forecast the next quarter” or “{entityExample}”</p></div>
         )}
       </div>
     </section>

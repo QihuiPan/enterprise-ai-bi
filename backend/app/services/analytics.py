@@ -6,7 +6,7 @@ import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.models import SalesRecord
+from backend.app.models import DatasetProfile, SalesRecord
 from backend.app.services.filtering import NoMatchingSalesError, SalesFilters
 
 BREAKDOWN_DIMENSIONS = frozenset({"region", "category", "product"})
@@ -58,6 +58,22 @@ def sales_frame(
 
     frame = pd.DataFrame.from_records(records, columns=_SALES_COLUMNS)
     frame["order_date"] = pd.to_datetime(frame["order_date"])
+    profile = session.get(DatasetProfile, 1)
+    if profile is not None:
+        frame.attrs["record_semantics"] = {
+            "source": profile.dataset_name,
+            "aggregate_record_proxy": profile.aggregate_record_proxy,
+            "record_count_label": profile.record_count_label,
+            "entity_count_label": profile.entity_count_label,
+            "average_value_label": profile.average_value_label,
+            "average_frequency_label": profile.average_frequency_label,
+            "warning": profile.semantic_warning,
+            "entity_warning": profile.entity_warning,
+            "units_available": profile.units_available,
+            "units_label": profile.units_label,
+            "unit_warning": profile.unit_warning,
+            "anomaly_features": list(profile.anomaly_features),
+        }
     return frame
 
 
@@ -125,6 +141,9 @@ class SalesAnalytics:
         }
 
     def record_semantics(self) -> dict:
+        profile_semantics = self.frame.attrs.get("record_semantics")
+        if profile_semantics:
+            return dict(profile_semantics)
         order_ids = self.frame["order_id"].astype(str)
         sources = (
             (
@@ -182,6 +201,15 @@ class SalesAnalytics:
                     "average_frequency_label": frequency_label,
                     "warning": warning,
                     "entity_warning": entity_warning,
+                    "units_available": True,
+                    "units_label": "Units sold",
+                    "unit_warning": None,
+                    "anomaly_features": [
+                        "revenue",
+                        "quantity",
+                        "unit_price",
+                        "discount",
+                    ],
                 }
         return {
             "source": "Uploaded order-level sales",
@@ -192,6 +220,15 @@ class SalesAnalytics:
             "average_frequency_label": "Average orders",
             "warning": None,
             "entity_warning": None,
+            "units_available": True,
+            "units_label": "Units sold",
+            "unit_warning": None,
+            "anomaly_features": [
+                "revenue",
+                "quantity",
+                "unit_price",
+                "discount",
+            ],
         }
 
     @staticmethod
@@ -208,6 +245,7 @@ class SalesAnalytics:
 
     def kpis(self) -> dict:
         frame = self.frame
+        semantics = self.record_semantics()
         order_revenue = frame.groupby("order_id")["revenue"].sum()
         monthly_revenue = (
             frame.assign(period=frame["order_date"].dt.to_period("M"))
@@ -253,9 +291,18 @@ class SalesAnalytics:
         return {
             "total_revenue": round(float(frame["revenue"].sum()), 2),
             "order_count": int(frame["order_id"].nunique()),
-            "customer_count": int(frame["customer_id"].nunique()),
+            "customer_count": int(
+                frame.loc[
+                    frame["customer_id"].astype(str) != "UNSPECIFIED-ENTITY",
+                    "customer_id",
+                ].nunique()
+            ),
             "average_order_value": round(float(order_revenue.mean()), 2),
-            "units_sold": int(frame["quantity"].sum()),
+            "units_sold": (
+                int(frame["quantity"].sum())
+                if semantics.get("units_available", True)
+                else None
+            ),
             "latest_month": str(monthly_revenue.index[-1]),
             "latest_month_revenue": round(latest_revenue, 2),
             "month_over_month_change_pct": (
@@ -264,7 +311,7 @@ class SalesAnalytics:
             "month_over_month_available": change is not None,
             "month_over_month_status": change_status,
             "month_over_month_period_coverage": comparison_coverage,
-            "record_semantics": self.record_semantics(),
+            "record_semantics": semantics,
             "data_start": frame["order_date"].min().date().isoformat(),
             "data_end": frame["order_date"].max().date().isoformat(),
         }
@@ -302,6 +349,7 @@ class SalesAnalytics:
             .sort_values("revenue", ascending=False)
         )
         total = float(grouped["revenue"].sum())
+        units_available = self.record_semantics().get("units_available", True)
         return [
             {
                 "name": str(getattr(row, dimension)),
@@ -310,7 +358,7 @@ class SalesAnalytics:
                     round(float(row.revenue) / total * 100, 2) if total else 0
                 ),
                 "orders": int(row.orders),
-                "units": int(row.units),
+                "units": int(row.units) if units_available else None,
             }
             for row in grouped.itertuples(index=False)
         ]

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from backend.app.agents.orchestrator import AgentOrchestrator
-from backend.app.currency import CurrencyCode
+from backend.app.currency import CurrencyCode, resolve_source_currency
 from backend.app.services.business import BusinessIntelligence
 from backend.app.services.filtering import SalesFilters
 
@@ -15,6 +15,7 @@ def executive_report(
     filters: SalesFilters | None = None,
     currency: CurrencyCode = "USD",
 ) -> dict:
+    currency = resolve_source_currency(session, currency)
     business = BusinessIntelligence(session, filters)
     metrics = business.analytics.kpis()
     semantics = metrics["record_semantics"]

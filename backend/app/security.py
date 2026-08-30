@@ -4,7 +4,7 @@ import math
 import secrets
 import threading
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 
 from fastapi import Request
@@ -12,6 +12,76 @@ from starlette.datastructures import MutableHeaders
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+UPLOAD_BODY_PATHS = {
+    "/api/data/upload",
+    "/api/data/preview",
+    "/api/data/import",
+}
+MULTIPART_OVERHEAD_BYTES = 256 * 1024
+
+
+class RequestBodyLimitMiddleware:
+    """Bound upload request bodies before multipart parsing can spool them to disk."""
+
+    def __init__(self, app: ASGIApp, *, max_upload_bytes: int) -> None:
+        self.app = app
+        self.max_body_bytes = max_upload_bytes + MULTIPART_OVERHEAD_BYTES
+
+    async def _reject(self, scope: Scope, receive: Receive, send: Send) -> None:
+        response = JSONResponse(
+            status_code=413,
+            content={"detail": "Request body exceeds the configured upload limit."},
+        )
+        await response(scope, receive, send)
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if (
+            scope["type"] != "http"
+            or scope.get("method") != "POST"
+            or scope.get("path") not in UPLOAD_BODY_PATHS
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        headers = {
+            key.lower(): value for key, value in scope.get("headers", [])
+        }
+        raw_content_length = headers.get(b"content-length")
+        if raw_content_length is not None:
+            try:
+                if int(raw_content_length) > self.max_body_bytes:
+                    await self._reject(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+
+        received_bytes = 0
+        buffered_messages: deque[Message] = deque()
+        while True:
+            message = await receive()
+            if message["type"] == "http.request":
+                received_bytes += len(message.get("body", b""))
+                if received_bytes > self.max_body_bytes:
+                    await self._reject(scope, receive, send)
+                    return
+            buffered_messages.append(message)
+            if message["type"] == "http.disconnect" or not message.get(
+                "more_body", False
+            ):
+                break
+
+        async def replay_receive() -> Message:
+            if buffered_messages:
+                return buffered_messages.popleft()
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
 
 
 def _is_api_path(path: str) -> bool:

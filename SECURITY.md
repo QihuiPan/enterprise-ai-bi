@@ -9,8 +9,30 @@ to the repository owner with reproduction steps and impact.
 
 - Natural-language questions never execute generated SQL.
 - Agents can call only registered, read-only analytical tools.
-- Uploads have a configurable size limit and a strict required schema.
-- Revenue is derived by the server instead of trusted from uploaded files.
+- Uploads have configurable byte and tabular-complexity limits. CSV/TSV inputs
+  use a bounded UTF-8 parser; XLSX packages are screened for unsafe expansion,
+  unsupported encryption/macros, workbook complexity, and malformed content.
+  Declared and chunked request bodies are bounded before multipart parsing can
+  spool an oversized upload, and the endpoint separately enforces exact file size.
+- Flexible imports expose conservative mapping suggestions but require an
+  explicit mapping and full-file validation before activation. Preview never
+  mutates active data.
+- Quantity-and-unit-price revenue is derived by the server. Direct-revenue mode
+  is accepted only when explicitly selected and is normalized through the same
+  canonical validation and safety limits.
+- Monetary fields use anchored numeric parsing and source-currency enforcement.
+  Obvious currency-code columns must be mapped, every row must agree on USD or
+  GBP, and verified active-profile currency cannot be overridden by
+  insight/report calls. Pre-profile database rows are backfilled as explicitly
+  unverified and remain operator-selectable until their source is re-imported.
+- Prepared public-dataset profiles are explicit, validate required mappings,
+  complete artifact coverage, entity/dimension presence, currency, and
+  generated-ID contracts. New imports are never inferred from attacker-controlled
+  IDs, and legacy rows are never granted trusted currency provenance from shape
+  or IDs. Parallel dashboard responses are accepted only when their stored
+  dataset hashes, profile hashes, and currencies match.
+- Prepared profiles are an authenticated operator assertion plus strict structural
+  validation; they are not cryptographic authentication of a known artifact.
 - Database credentials and frontend API URLs are supplied through environment
   variables and are not committed.
 - Business API routes can require a deployment-provided API key. Comparisons use

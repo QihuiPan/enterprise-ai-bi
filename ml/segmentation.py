@@ -15,8 +15,11 @@ class CustomerSegmenter:
     random_state: int = 42
 
     def run(self, frame: pd.DataFrame) -> dict:
-        snapshot = frame["order_date"].max() + timedelta(days=1)
-        rfm = frame.groupby("customer_id").agg(
+        usable = frame[frame["customer_id"].astype(str) != "UNSPECIFIED-ENTITY"]
+        if usable.empty:
+            raise ValueError("No mapped entities are available for segmentation.")
+        snapshot = usable["order_date"].max() + timedelta(days=1)
+        rfm = usable.groupby("customer_id").agg(
             recency=(
                 "order_date",
                 lambda values: int((snapshot - values.max()).days),
@@ -66,6 +69,7 @@ class CustomerSegmenter:
         )
         return {
             "method": "RFM entity features standardized before K-Means",
+            "excluded_unspecified_records": int(len(frame) - len(usable)),
             "cluster_count": cluster_count,
             "segments": [
                 {

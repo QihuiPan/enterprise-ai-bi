@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.currency import CurrencyCode, format_currency
+from backend.app.currency import CurrencyCode, format_currency, resolve_source_currency
 from backend.app.services.analytics import NoDataError
 from backend.app.services.business import BusinessIntelligence
 from backend.app.services.filtering import SalesFilters
@@ -86,8 +86,14 @@ class AgentOrchestrator:
                     "customers",
                     "entity",
                     "entities",
+                    "account",
+                    "accounts",
                     "store",
                     "stores",
+                    "shop",
+                    "shops",
+                    "branch",
+                    "branches",
                     "segment",
                     "segments",
                     "segmentation",
@@ -124,6 +130,9 @@ class AgentOrchestrator:
                     "商店",
                     "門店",
                     "门店",
+                    "分店",
+                    "帳戶",
+                    "账户",
                     "價值",
                     "价值",
                     "最高",
@@ -588,6 +597,30 @@ class AgentOrchestrator:
         }
 
     @staticmethod
+    def _semantic_unavailable_result(question: str, reason: str) -> dict:
+        return {
+            "question": question,
+            "answer": reason,
+            "agents_used": ["Data Analyst Agent"],
+            "tools_used": [],
+            "evidence": [
+                {
+                    "source": "analytics.dataset_profile",
+                    "metric": "semantic_metric_unavailable",
+                    "value": {"available": False},
+                    "context": reason,
+                }
+            ],
+            "query_plan": None,
+            "chart": None,
+            "explanation": (
+                "The active dataset profile prevented a synthesized field from being "
+                "presented as an observed business metric."
+            ),
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+
+    @staticmethod
     def _unavailable_result(key: str, name: str, reason: str) -> AgentResult:
         readable_name = name.removesuffix(" Agent")
         return (
@@ -606,6 +639,38 @@ class AgentOrchestrator:
             [],
         )
 
+    @staticmethod
+    def _requested_entity_label(question: str) -> str | None:
+        normalized = question.casefold()
+        entity_patterns = (
+            (
+                "Customers",
+                r"\b(?:customer|customers|client|clients|buyer|buyers)\b",
+                ("客户", "客戶", "顾客", "顧客"),
+            ),
+            (
+                "Stores",
+                r"\b(?:store|stores|shop|shops|branch|branches)\b",
+                ("门店", "門店", "商店", "分店"),
+            ),
+            (
+                "Accounts",
+                r"\b(?:account|accounts)\b",
+                ("账户", "帳戶"),
+            ),
+            (
+                "Entities",
+                r"\b(?:entity|entities)\b",
+                ("实体", "實體"),
+            ),
+        )
+        for label, english_pattern, cjk_terms in entity_patterns:
+            if re.search(english_pattern, normalized) or any(
+                term in normalized for term in cjk_terms
+            ):
+                return label
+        return None
+
     def answer(self, question: str) -> dict:
         if BusinessQuestionParser.requests_database_access(question):
             return self._policy_result(question)
@@ -613,6 +678,44 @@ class AgentOrchestrator:
         requested = self._select_agents(question)
         if not self._specialist_scope_supported(requested, question):
             return self._unsupported_question_result(question)
+        semantics = self.business.analytics.record_semantics()
+        requested_entity_label = self._requested_entity_label(question)
+        entity_label = semantics["entity_count_label"]
+        entity_mismatch = bool(
+            requested_entity_label
+            and (
+                (
+                    requested_entity_label == "Entities"
+                    and entity_label == "Unspecified entities"
+                )
+                or (
+                    requested_entity_label != "Entities"
+                    and entity_label != requested_entity_label
+                )
+            )
+        )
+        if (
+            requested != self.EXECUTIVE_SEQUENCE
+            and entity_mismatch
+        ):
+            return self._semantic_unavailable_result(
+                question,
+                f"{requested_entity_label} analytics are unavailable because "
+                f"the active entity field represents {entity_label.lower()}. "
+                f"Ask about {entity_label.lower()} instead.",
+            )
+        if requested == ("analyst",):
+            parsed_query = BusinessQuestionParser().parse(question)
+            if (
+                parsed_query is not None
+                and parsed_query.metric == "units"
+                and not semantics.get("units_available", True)
+            ):
+                return self._semantic_unavailable_result(
+                    question,
+                    semantics.get("unit_warning")
+                    or "Unit analytics are unavailable because quantity was not mapped.",
+                )
         answers: list[str] = []
         evidence: list[dict] = []
         tools: list[str] = []
@@ -684,4 +787,6 @@ def answer_question(
     currency: CurrencyCode = "USD",
 ) -> dict:
     business = BusinessIntelligence(session, filters)
-    return AgentOrchestrator(business, currency).answer(question)
+    return AgentOrchestrator(
+        business, resolve_source_currency(session, currency)
+    ).answer(question)
