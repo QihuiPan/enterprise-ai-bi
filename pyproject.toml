@@ -12,7 +12,7 @@ dependencies = [
   "fastapi>=0.116,<1.0",
   "uvicorn[standard]>=0.35,<1.0",
   "sqlalchemy>=2.0,<3.0",
-  "pandas>=2.2,<3.0",
+  "pandas>=2.2,<4.0",
   "openpyxl>=3.1,<4.0",
   "scikit-learn>=1.6,<2.0",
   "python-multipart>=0.0.20,<1.0",
@@ -22,8 +22,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "httpx2>=2.0,<3.0",
-  "pytest>=8.3,<9.0",
-  "pytest-cov>=6.0,<7.0",
+  "pytest>=8.3,<10.0",
+  "pytest-cov>=6.0,<8.0",
   "ruff>=0.12,<1.0",
 ]
 
