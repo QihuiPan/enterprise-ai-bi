@@ -12,7 +12,7 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_API_KEY_HEADER=$VITE_API_KEY_HEADER
 RUN pnpm build
 
-FROM nginx:1.30.4-alpine
+FROM nginx:1.31.5-alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
